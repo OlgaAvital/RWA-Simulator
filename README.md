@@ -24,6 +24,18 @@ npm run dev
 http://127.0.0.1:5173
 ```
 
+
+## Preview ופרסום ב-GitHub
+
+הפרויקט כולל קובץ `vite.config.js` עם `base: "./"`, כדי ש־build סטטי יעבוד גם תחת נתיב Repository של GitHub Pages ולא רק בשורש דומיין.
+
+נוסף workflow בשם `Build and publish preview`:
+
+- בכל Pull Request נבנה `dist` ומועלה artifact בשם `rwa-simulator-dist-preview` לצורך בדיקת תוצר ה־preview.
+- בכל push ל־`main` או `master` נבנה `dist` ונפרס ל־GitHub Pages, בכפוף לכך ש־Pages מוגדר ב־Repository ל־GitHub Actions.
+
+אם GitHub מציג conflict ב־PR ישן, מומלץ לפתוח PR חדש מהענף המעודכן לאחר commit זה או לעדכן את הענף מול בסיס ה־target. בקוד המקומי אין conflict markers, וה־build רץ מהמצב הנוכחי.
+
 ## מבנה
 
 - `src/App.jsx` - מעטפת האפליקציה, state orchestration וחיבור בין מסכים, מודלים וגרפים.
