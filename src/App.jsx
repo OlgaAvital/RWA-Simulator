@@ -977,19 +977,21 @@ function getInfraGuaranteeFacilityPct(product, year, constructionYears = 0, ramp
   return clampNumber(product[fieldConfig.field] ?? DEFAULT_INFRA_GUARANTEE_FRAME_PCTS[relativeYear - 1] ?? 0, 0, 100) / 100;
 }
 
-function calculateInfrastructureFees(fees, projectTotalScope, constructionYears, rampUpYears, projectYears) {
+function calculateInfrastructureFees(fees, feeBaseAmount, constructionYears, rampUpYears, projectYears) {
   const rows = (fees || []).map((fee) => {
     const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
-    const amount = Math.max(0, Number(fee.amount) || 0);
-    const pct = Math.max(0, Number(fee.pct) || 0);
-    const resolvedAmount = amount > 0 ? amount : projectTotalScope * (pct / 100);
-    const resolvedPct = projectTotalScope > 0 ? (resolvedAmount / projectTotalScope) * 100 : pct;
+    const rawAmount = Math.max(0, Number(fee.amount) || 0);
+    const rawPct = Math.max(0, Number(fee.pct) || 0);
+    const amountMode = fee.amountMode || (rawAmount > 0 ? "amount" : "pct");
+    const resolvedAmount = amountMode === "pct" ? feeBaseAmount * (rawPct / 100) : rawAmount;
+    const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : rawPct;
     const spreadYears = Math.max(1, Math.round(Number(fee.spreadYears) || 1));
 
     return {
       ...fee,
       label: config.label,
       timing: config.timing,
+      amountMode,
       amount: resolvedAmount,
       pct: resolvedPct,
       spreadYears,
@@ -1026,6 +1028,8 @@ function calculateInfrastructureProjectForecast(input) {
   const projectTotalScope = Math.max(0, Number(input.projectTotalScope) || 0) * projectFx;
   const bankSharePct = clampNumber(input.bankSharePct ?? 100, 0, 100);
   const bankShareAmount = projectTotalScope * (bankSharePct / 100);
+  const organizedByBank = input.organizedByBank !== false;
+  const arrangerName = organizedByBank ? "הבנק" : input.arrangerName || "גוף מארגן אחר";
   const discountRate = Math.max(0, Number(input.discountRate) || 0);
   const depositBalance = Math.max(0, Number(input.depositBalance) || 0) * projectFx;
   const depositMargin = Math.max(0, Number(input.depositMargin) || 0);
@@ -1033,7 +1037,7 @@ function calculateInfrastructureProjectForecast(input) {
   const annualDepositIncome = depositBalance * (depositMargin / 100);
   const feeAnalysis = calculateInfrastructureFees(
     (input.fees || []).map((fee) => ({ ...fee, amount: Math.max(0, Number(fee.amount) || 0) * projectFx })),
-    projectTotalScope,
+    bankShareAmount,
     constructionYears,
     rampUpYears,
     years
@@ -1057,17 +1061,30 @@ function calculateInfrastructureProjectForecast(input) {
     let yearOutstanding = 0;
     let yearAverageOutstanding = 0;
     let yearUndrawn = 0;
+    let projectOutstanding = 0;
+    let projectAverageOutstanding = 0;
+    let projectUndrawn = 0;
     let interestIncome = 0;
     let feeIncome = 0;
     let ead = 0;
 
     products.forEach((product) => {
       const rule = INFRA_PRODUCT_TYPES[product.productType] || INFRA_PRODUCT_TYPES.infraLongTermLoan;
+      const isBankFunded = (product.lenderType || "bank") === "bank";
       const amount = Math.max(0, Number(product.amount) || 0);
       const productCurrency = product.currency || projectCurrency;
       const fx = getInfraFxRate(productCurrency, product.fxRate);
       const amountIls = amount * fx;
       const opening = balances[product.id] || 0;
+      const productStageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+      const relativeProductYear = year - productStageStartYear + 1;
+      const isConstructionYear = year <= constructionYears;
+      const feeTiming = product.feeTiming || "fullProjectAnnual";
+      const nonLoanExposureApplies =
+        relativeProductYear >= 1 &&
+        (feeTiming === "oneTimeFirstYear" ? relativeProductYear === 1 :
+        feeTiming === "constructionAnnual" ? isConstructionYear :
+        true);
       const guaranteeFacilityPct = rule.isGuaranteeFacility ? getInfraGuaranteeFacilityPct(product, year, constructionYears, rampUpYears) : 0;
       const guaranteeFacilityLimit = rule.isGuaranteeFacility ? amountIls * guaranteeFacilityPct : 0;
       const guaranteeFacilityUtilizationPct = clampNumber(product.utilizationPct ?? 100, 0, 100) / 100;
@@ -1083,7 +1100,7 @@ function calculateInfrastructureProjectForecast(input) {
       balances[product.id] = closing;
 
       const averageOutstanding = rule.isLoan ? (opening + closing) / 2 : 0;
-      const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : amountIls;
+      const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : nonLoanExposureApplies ? amountIls : 0;
       const ccf = Math.max(0, Number(product.ccf ?? rule.defaultCcf) || 0) / 100;
       const ccfUndrawn = Math.max(0, Number(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 0) || 0) / 100;
       const phasedLoanAfterFinalPulse = rule.isPhasedLoan ? isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears, rampUpYears) : false;
@@ -1102,25 +1119,26 @@ function calculateInfrastructureProjectForecast(input) {
       if (rule.incomeMode === "interest") {
         productIncome = averageOutstanding * rate;
       } else {
-        const timing = product.feeTiming || "fullProjectAnnual";
-        const productStageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
-        const relativeProductYear = year - productStageStartYear + 1;
-        const isConstructionYear = year <= constructionYears;
-        const feeApplies =
-          relativeProductYear >= 1 &&
-          (timing === "oneTimeFirstYear" ? relativeProductYear === 1 :
-          timing === "constructionAnnual" ? isConstructionYear :
-          true);
-        productIncome = feeApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
+        productIncome = nonLoanExposureApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
       }
 
-      yearDrawdown += drawdown;
-      yearOutstanding += closing + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      yearAverageOutstanding += averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      yearUndrawn += rule.isGuaranteeFacility ? guaranteeFacilityUndrawn : rule.isLoan ? Math.max(0, loanFrameForRwa - closing) : 0;
-      interestIncome += rule.incomeMode === "interest" ? productIncome : 0;
-      feeIncome += rule.incomeMode === "feeRate" ? productIncome : 0;
-      ead += productEad;
+      const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
+      const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
+      const productUndrawn = rule.isGuaranteeFacility ? guaranteeFacilityUndrawn : rule.isLoan ? Math.max(0, loanFrameForRwa - closing) : 0;
+
+      projectOutstanding += productOutstanding;
+      projectAverageOutstanding += productAverageOutstanding;
+      projectUndrawn += productUndrawn;
+
+      if (isBankFunded) {
+        yearDrawdown += drawdown;
+        yearOutstanding += productOutstanding;
+        yearAverageOutstanding += productAverageOutstanding;
+        yearUndrawn += productUndrawn;
+        interestIncome += rule.incomeMode === "interest" ? productIncome : 0;
+        feeIncome += rule.incomeMode === "feeRate" ? productIncome : 0;
+        ead += productEad;
+      }
     });
 
     const eligibleCollateral = Math.min(ead, securitiesAnalysis.totalEligibleValue);
@@ -1134,8 +1152,10 @@ function calculateInfrastructureProjectForecast(input) {
     const collateralRwaSaving = eligibleCollateral * (riskWeight / 100);
     const guaranteeRwaSaving = Math.max(0, eligibleGuarantee * Math.max(riskWeight / 100 - guaranteeAnalysis.weightedGuarantorRiskWeight / 100, 0));
     const crmSaving = Math.max(0, rwaBeforeCrm - rwa);
-    const additionalIncome = annualDepositIncome + otherIncome + (feeAnalysis.incomeByYear[index] || 0);
-    const nominalIncome = interestIncome + feeIncome + additionalIncome;
+    const projectFeeIncome = feeAnalysis.incomeByYear[index] || 0;
+    const totalFeeIncome = feeIncome + projectFeeIncome;
+    const additionalIncome = annualDepositIncome + otherIncome;
+    const nominalIncome = interestIncome + totalFeeIncome + additionalIncome;
     const discountedIncome = nominalIncome / Math.pow(1 + discountRate / 100, Math.max(0, year - 1));
     const totalIncome = nominalIncome;
 
@@ -1148,11 +1168,14 @@ function calculateInfrastructureProjectForecast(input) {
       stage,
       drawdown: yearDrawdown,
       outstanding: yearOutstanding,
+      projectOutstanding,
       bankShareLimit: bankShareAmount,
       bankShareLimitExceeded,
       bankShareExcess,
       averageOutstanding: yearAverageOutstanding,
+      projectAverageOutstanding,
       undrawn: yearUndrawn,
+      projectUndrawn,
       ead,
       eligibleCollateral,
       eligibleGuarantee,
@@ -1165,7 +1188,9 @@ function calculateInfrastructureProjectForecast(input) {
       crmSaving,
       interestIncome,
       commitmentIncome: 0,
-      feeIncome,
+      feeIncome: totalFeeIncome,
+      productFeeIncome: feeIncome,
+      projectFeeIncome,
       additionalIncome,
       totalIncome,
       discountedIncome,
@@ -1175,20 +1200,26 @@ function calculateInfrastructureProjectForecast(input) {
   });
 
   const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
-  const totalProductFeeIncome = rows.reduce((sum, row) => sum + row.feeIncome, 0);
+  const totalProductFeeIncome = rows.reduce((sum, row) => sum + row.productFeeIncome, 0);
   const totalAdditionalIncome = rows.reduce((sum, row) => sum + row.additionalIncome, 0);
   const discountedIncome = rows.reduce((sum, row) => sum + row.discountedIncome, 0);
   const averageAnnualIncome = totalIncome / years;
   const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / years;
   const averageReturnOnRwa = averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0;
   const peakExposure = rows.reduce((max, row) => Math.max(max, row.outstanding), 0);
+  const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectOutstanding), 0);
   const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
   const bankShareLimitBreaches = rows.filter((row) => row.bankShareLimitExceeded);
   const maxBankShareExcess = rows.reduce((max, row) => Math.max(max, row.bankShareExcess || 0), 0);
   const totalCrmSaving = rows.reduce((sum, row) => sum + row.crmSaving, 0);
   const totalCollateralRwaSaving = rows.reduce((sum, row) => sum + row.collateralRwaSaving, 0);
   const totalGuaranteeRwaSaving = rows.reduce((sum, row) => sum + row.guaranteeRwaSaving, 0);
-  const totalFacility = products.reduce((sum, product) => {
+  const totalProjectFacility = products.reduce((sum, product) => {
+    const productCurrency = product.currency || projectCurrency;
+    const fx = getInfraFxRate(productCurrency, product.fxRate);
+    return sum + Math.max(0, Number(product.amount) || 0) * fx;
+  }, 0);
+  const totalFacility = products.filter((product) => (product.lenderType || "bank") === "bank").reduce((sum, product) => {
     const productCurrency = product.currency || projectCurrency;
     const fx = getInfraFxRate(productCurrency, product.fxRate);
     return sum + Math.max(0, Number(product.amount) || 0) * fx;
@@ -1201,6 +1232,8 @@ function calculateInfrastructureProjectForecast(input) {
     projectTotalScope,
     bankSharePct,
     bankShareAmount,
+    organizedByBank,
+    arrangerName,
     discountRate,
     depositBalance,
     depositMargin,
@@ -1216,6 +1249,7 @@ function calculateInfrastructureProjectForecast(input) {
     otherIncome,
     annualAdditionalIncome,
     totalFacility,
+    totalProjectFacility,
     totalProductFeeIncome,
     totalAdditionalIncome,
     totalIncome,
@@ -1224,6 +1258,7 @@ function calculateInfrastructureProjectForecast(input) {
     averageRwa,
     averageReturnOnRwa,
     peakExposure,
+    peakProjectExposure,
     peakRwa,
     bankShareLimitBreaches,
     maxBankShareExcess,
@@ -1544,6 +1579,8 @@ export default function RwaReturnSimulator() {
   const [infraProjectCurrency, setInfraProjectCurrency] = useState("ILS");
   const [infraProjectTotalScope, setInfraProjectTotalScope] = useState(1000000);
   const [infraBankSharePct, setInfraBankSharePct] = useState(40);
+  const [infraOrganizedByBank, setInfraOrganizedByBank] = useState(true);
+  const [infraArrangerName, setInfraArrangerName] = useState("גוף מוסדי / בנק מוביל אחר");
   const [infraDiscountRate, setInfraDiscountRate] = useState(0);
   const [infraDepositBalance, setInfraDepositBalance] = useState(0);
   const [infraDepositMargin, setInfraDepositMargin] = useState(0);
@@ -1575,6 +1612,10 @@ export default function RwaReturnSimulator() {
       fxRate: 1,
       amount: 650000,
       rate: 2.8,
+      interestBase: "צמוד מדד",
+      customerRate: 5.1,
+      lenderType: "bank",
+      lenderName: "הבנק",
       ccf: 100,
       ccfUndrawn: 40,
       utilizationPct: 100,
@@ -1614,6 +1655,8 @@ export default function RwaReturnSimulator() {
       fxRate: 1,
       amount: 100000,
       rate: 1.1,
+      lenderType: "bank",
+      lenderName: "הבנק",
       feeTiming: "constructionAnnual",
       ccf: 50,
       amortizationType: "grace",
@@ -1746,6 +1789,8 @@ export default function RwaReturnSimulator() {
     infraProjectCurrency,
     infraProjectTotalScope,
     infraBankSharePct,
+    infraOrganizedByBank,
+    infraArrangerName,
     infraDiscountRate,
     infraDepositBalance,
     infraDepositMargin,
@@ -1795,6 +1840,8 @@ export default function RwaReturnSimulator() {
     setInfraProjectCurrency(snapshot.infraProjectCurrency || "ILS");
     setInfraProjectTotalScope(snapshot.infraProjectTotalScope ?? 1000000);
     setInfraBankSharePct(snapshot.infraBankSharePct ?? 40);
+    setInfraOrganizedByBank(snapshot.infraOrganizedByBank ?? true);
+    setInfraArrangerName(snapshot.infraArrangerName || "גוף מוסדי / בנק מוביל אחר");
     setInfraDiscountRate(snapshot.infraDiscountRate ?? 0);
     setInfraDepositBalance(snapshot.infraDepositBalance ?? 0);
     setInfraDepositMargin(snapshot.infraDepositMargin ?? 0);
@@ -1862,6 +1909,8 @@ export default function RwaReturnSimulator() {
     setInfraProjectCurrency("ILS");
     setInfraProjectTotalScope(0);
     setInfraBankSharePct(0);
+    setInfraOrganizedByBank(true);
+    setInfraArrangerName("");
     setInfraDiscountRate(0);
     setInfraDepositBalance(0);
     setInfraDepositMargin(0);
@@ -1891,6 +1940,10 @@ export default function RwaReturnSimulator() {
     setIsProductsModalOpen(false);
     setIsSecuritiesModalOpen(false);
     setIsAccountLookupModalOpen(false);
+    setIsInfraProductsModalOpen(false);
+    setIsInfraGuaranteesModalOpen(false);
+    setIsInfraSecuritiesModalOpen(false);
+    setIsInfraFeesModalOpen(false);
     setIsPrintPreviewOpen(true);
   };
 
@@ -2053,6 +2106,8 @@ export default function RwaReturnSimulator() {
         projectCurrency: infraProjectCurrency,
         projectTotalScope: infraProjectTotalScope,
         bankSharePct: infraBankSharePct,
+        organizedByBank: infraOrganizedByBank,
+        arrangerName: infraArrangerName,
         discountRate: infraDiscountRate,
         depositBalance: infraDepositBalance,
         depositMargin: infraDepositMargin,
@@ -2077,6 +2132,8 @@ export default function RwaReturnSimulator() {
       infraProjectCurrency,
       infraProjectTotalScope,
       infraBankSharePct,
+      infraOrganizedByBank,
+      infraArrangerName,
       infraDiscountRate,
       infraDepositBalance,
       infraDepositMargin,
@@ -2279,10 +2336,14 @@ export default function RwaReturnSimulator() {
             setRampUpYears={setInfraRampUpYears}
             projectCurrency={infraProjectCurrency}
             setProjectCurrency={setInfraProjectCurrency}
-            projectTotalScope={infraProjectTotalScope}
+            feeBaseAmount={infrastructureForecast.bankShareAmount}
             setProjectTotalScope={setInfraProjectTotalScope}
             bankSharePct={infraBankSharePct}
             setBankSharePct={setInfraBankSharePct}
+            organizedByBank={infraOrganizedByBank}
+            setOrganizedByBank={setInfraOrganizedByBank}
+            arrangerName={infraArrangerName}
+            setArrangerName={setInfraArrangerName}
             discountRate={infraDiscountRate}
             setDiscountRate={setInfraDiscountRate}
             depositBalance={infraDepositBalance}
@@ -2309,8 +2370,8 @@ export default function RwaReturnSimulator() {
             setGuarantees={setInfraGuarantees}
             securities={infraSecurities}
             setSecurities={setInfraSecurities}
-            onOpenProducts={(stage) => {
-              setInfraProductsModalStage(stage || "construction");
+            onOpenProducts={(stage, lenderType = "bank") => {
+              setInfraProductsModalStage({ stage: stage || "construction", lenderType });
               setIsInfraProductsModalOpen(true);
             }}
             onOpenGuarantees={() => setIsInfraGuaranteesModalOpen(true)}
@@ -2870,6 +2931,10 @@ export default function RwaReturnSimulator() {
           entityStatus={entityStatus}
           spRating={spRating}
           realEstateExposureType={realEstateExposureType}
+          infrastructureForecast={infrastructureForecast}
+          projectYears={infraProjectYears}
+          constructionYears={infraConstructionYears}
+          rampUpYears={infraRampUpYears}
           onClose={() => setIsPrintPreviewOpen(false)}
         />
       )}
@@ -2893,7 +2958,8 @@ export default function RwaReturnSimulator() {
           products={infraProducts}
           setProducts={setInfraProducts}
           projectCurrency={infraProjectCurrency}
-          stage={infraProductsModalStage}
+          stage={typeof infraProductsModalStage === "string" ? infraProductsModalStage : infraProductsModalStage.stage}
+          lenderType={typeof infraProductsModalStage === "string" ? "bank" : infraProductsModalStage.lenderType}
           onClose={() => setIsInfraProductsModalOpen(false)}
         />
       )}
@@ -2921,7 +2987,7 @@ export default function RwaReturnSimulator() {
         <InfraFeesModal
           fees={infraFees}
           setFees={setInfraFees}
-          projectTotalScope={infraProjectTotalScope}
+          feeBaseAmount={infrastructureForecast.bankShareAmount}
           onClose={() => setIsInfraFeesModalOpen(false)}
         />
       )}
@@ -2940,7 +3006,11 @@ export default function RwaReturnSimulator() {
   );
 }
 
-function PrintPreviewModal({ clientName, dealName, viewMode, result, productsAnalysis, additionalIncome, entityStatus, spRating, realEstateExposureType, onClose }) {
+function PrintPreviewModal({ clientName, dealName, viewMode, result, productsAnalysis, additionalIncome, entityStatus, spRating, realEstateExposureType, infrastructureForecast, onClose }) {
+  if (viewMode === "infrastructureProject") {
+    return <InfrastructurePrintPreviewModal clientName={clientName} dealName={dealName} forecast={infrastructureForecast} onClose={onClose} />;
+  }
+
   const returnOnRwa = result.rwaAfter > 0 ? (result.annualIncome / result.rwaAfter) * 100 : 0;
   const displayMode = viewMode === "existingPlusNew" ? "מצב קיים + עסקה חדשה" : "עסקה בודדת";
 
@@ -3068,6 +3138,137 @@ function PrintPreviewModal({ clientName, dealName, viewMode, result, productsAna
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function InfrastructurePrintPreviewModal({ clientName, dealName, forecast, onClose }) {
+  const firstYear = forecast.rows[0] || {};
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" dir="rtl">
+      <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-slate-100 shadow-2xl">
+        <div className="print-hide flex flex-col gap-3 border-b bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">פלט PDF — מודול תשואת פרויקט</h2>
+            <p className="mt-1 text-sm text-slate-600">שני עמודי A4 לרוחב עם הנחות, אשראי, הכנסות ותשואה. להפקת PDF לחצי הדפס / שמור PDF.</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => window.print()} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">הדפס / שמור PDF</button>
+            <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200">סגור</button>
+          </div>
+        </div>
+
+        <div className="overflow-auto p-4">
+          <div className="mx-auto w-[1123px] space-y-4">
+            <div className="min-h-[794px] rounded-2xl bg-white p-6 shadow-lg print:break-after-page print:shadow-none">
+              <div className="rounded-3xl bg-slate-900 p-5 text-white">
+                <div className="text-sm text-orange-200">מודול תשואת פרויקט</div>
+                <h1 className="mt-1 text-3xl font-bold">פלט פרויקט תשתית</h1>
+                <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                  <span className="rounded-full bg-white/10 px-3 py-1">לקוח: {clientName || "לא הוזן"}</span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">פרויקט: {dealName || "לא הוזן"}</span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">ארגון: {forecast.arrangerName}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-5 gap-3">
+                <PrintKpi title="היקף פרויקט" value={formatM(forecast.projectTotalScope)} />
+                <PrintKpi title="חלק הבנק" value={formatM(forecast.bankShareAmount)} />
+                <PrintKpi title="מימון בנק" value={formatM(forecast.totalFacility)} />
+                <PrintKpi title="מימון כל הפרויקט" value={formatM(forecast.totalProjectFacility)} />
+                <PrintKpi title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} positive />
+              </div>
+
+              <div className="mt-4 grid grid-cols-4 gap-3">
+                <PrintCard title="הנחות סינדיקציה">
+                  <PrintRow label="הפרויקט בארגון הבנק" value={forecast.organizedByBank ? "כן" : "לא"} />
+                  <PrintRow label="גוף מארגן" value={forecast.arrangerName} />
+                  <PrintRow label="חלק הבנק" value={`${forecast.bankSharePct.toFixed(1)}%`} />
+                  <PrintRow label="מטבע" value={INFRA_CURRENCIES[forecast.projectCurrency]?.label || forecast.projectCurrency} />
+                </PrintCard>
+                <PrintCard title="אשראי ו-RWA">
+                  <PrintRow label="חשיפה מקסימלית בנק" value={formatM(forecast.peakExposure)} />
+                  <PrintRow label="חשיפה מקסימלית פרויקט" value={formatM(forecast.peakProjectExposure)} />
+                  <PrintRow label="RWA ממוצע" value={formatM(forecast.averageRwa)} />
+                  <PrintRow label="RWA שיא" value={formatM(forecast.peakRwa)} />
+                </PrintCard>
+                <PrintCard title="הכנסות">
+                  <PrintRow label="הכנסה שנה 1" value={formatM(firstYear.totalIncome || 0, 2)} />
+                  <PrintRow label="הכנסה ממוצעת" value={formatM(forecast.averageAnnualIncome, 2)} />
+                  <PrintRow label="עמלות פרויקט" value={formatM(forecast.feeAnalysis.totalIncome, 2)} />
+                  <PrintRow label="הכנסות מהוונות" value={formatM(forecast.discountedIncome, 2)} />
+                </PrintCard>
+                <PrintCard title="CRM ובקרות">
+                  <PrintRow label="שווי בטוחות כשיר" value={formatM(forecast.securitiesAnalysis.totalEligibleValue)} />
+                  <PrintRow label="ערבויות CRM" value={formatM(forecast.guaranteeAnalysis.totalEligibleAmount)} />
+                  <PrintRow label="חיסכון RWA" value={formatM(forecast.totalCrmSaving)} />
+                  <PrintRow label="חריגה מחלק הבנק" value={forecast.maxBankShareExcess > 0 ? formatM(forecast.maxBankShareExcess) : "אין"} />
+                </PrintCard>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={forecast.rows} lines={[{ key: "outstanding", name: "יתרת אשראי", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
+                <PrintLineChart title="הכנסות ותשואה" data={forecast.rows} lines={[{ key: "totalIncome", name: "הכנסות", color: "#f97316" }, { key: "discountedIncome", name: "מהוון", color: "#64748b" }]} />
+              </div>
+            </div>
+
+            <div className="min-h-[794px] rounded-2xl bg-white p-6 shadow-lg print:shadow-none">
+              <h2 className="text-2xl font-bold text-slate-900">פירוט שנתי וגרף כל הפרויקט</h2>
+              <div className="mt-4 h-64 rounded-2xl border border-slate-200 p-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={forecast.rows} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                    <Tooltip formatter={(value) => formatK(Number(value))} />
+                    <Legend />
+                    <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת כל הפרויקט" />
+                    <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                    <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="יתרת הבנק" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-slate-100 text-slate-600">
+                    <tr>
+                      <th className="p-2 text-right">שנה</th><th className="p-2 text-right">שלב</th><th className="p-2 text-right">בנק</th><th className="p-2 text-right">כל הפרויקט</th><th className="p-2 text-right">RWA</th><th className="p-2 text-right">ריבית</th><th className="p-2 text-right">עמלות</th><th className="p-2 text-right">תשואה</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {forecast.rows.slice(0, 18).map((row) => (
+                      <tr key={row.year} className="border-t">
+                        <td className="p-2 font-medium">{row.year}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.outstanding)}</td><td className="p-2">{formatM(row.projectOutstanding)}</td><td className="p-2 font-bold text-emerald-700">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.interestIncome, 2)}</td><td className="p-2">{formatM(row.feeIncome, 2)}</td><td className="p-2">{row.returnOnRwa.toFixed(2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">פלט מוקאפ להמחשה. יש לאמת נתונים, CCF, משקלי סיכון והכרה בבטוחות מול מדיניות הבנק והוראות רגולטוריות.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintLineChart({ title, data, lines }) {
+  return (
+    <div className="h-64 rounded-2xl border border-slate-200 p-3">
+      <h3 className="mb-2 text-sm font-bold text-slate-800">{title}</h3>
+      <ResponsiveContainer width="100%" height="85%">
+        <LineChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+          <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+          <Tooltip formatter={(value) => formatK(Number(value))} />
+          <Legend />
+          {lines.map((line) => <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={3} dot={false} name={line.name} />)}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -3522,6 +3723,20 @@ function ProductsModal({ products, setProducts, analysis, onBeforeChange, onClos
                               />
                               <div className="mt-1 text-[11px] text-slate-400">מינימום 12 חודשים</div>
                             </FieldBox>
+                            <FieldBox title="בסיס ההלוואה">
+                              <input
+                                value={row.interestBase || ""}
+                                onChange={(event) => updateProduct(row.id, "interestBase", event.target.value)}
+                                placeholder="צמוד מדד / SOFR 3M / יוריבור 3M"
+                                className="w-full rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200"
+                              />
+                            </FieldBox>
+
+                            <FieldBox title="ריבית ללקוח, %">
+                              <NumberCell wide value={row.customerRate ?? 0} onChange={(v) => updateProduct(row.id, "customerRate", clampNumber(v, 0, 30))} />
+                              <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Number(row.customerRate) > 0 ? `${(Math.max(0, Number(row.customerRate) || 0) - Math.max(0, Number(row.margin) || 0)).toFixed(2)}%` : "—"}</div>
+                            </FieldBox>
+
                             <FieldBox title="לוח סילוקין">
                               <select
                                 value={row.amortizationType || "equalPrincipal"}
@@ -3578,9 +3793,11 @@ function ProductsModal({ products, setProducts, analysis, onBeforeChange, onClos
   );
 }
 
-function InfraProductsModal({ products, setProducts, projectCurrency, stage = "construction", onClose }) {
+function InfraProductsModal({ products, setProducts, projectCurrency, stage = "construction", lenderType = "bank", onClose }) {
   const stageConfig = INFRA_PRODUCT_STAGES[stage] || INFRA_PRODUCT_STAGES.construction;
-  const visibleProducts = (products || []).filter((product) => (product.stage || "construction") === stage);
+  const isOtherLenderModal = lenderType === "other";
+  const lenderTitle = isOtherLenderModal ? "אשראי מממנים אחרים" : "אשראי במימון הבנק";
+  const visibleProducts = (products || []).filter((product) => (product.stage || "construction") === stage && (product.lenderType || "bank") === lenderType);
   const updateProduct = (id, field, value) => {
     setProducts((rows) => rows.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
   };
@@ -3592,10 +3809,14 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
         name: `מוצר ${stageConfig.shortLabel} חדש`,
         stage,
         productType: "infraLongTermLoan",
+        lenderType,
+        lenderName: isOtherLenderModal ? "מממן אחר" : "הבנק",
         currency: projectCurrency,
         fxRate: INFRA_CURRENCIES[projectCurrency]?.lastKnownRate || 1,
         amount: 0,
         rate: 2,
+        interestBase: "",
+        customerRate: 0,
         feeTiming: "fullProjectAnnual",
         ccf: 100,
         ccfUndrawn: 40,
@@ -3640,7 +3861,7 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
       <div className="h-[70vh] w-[82vw] max-w-[1800px] min-w-[980px] overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex flex-col gap-3 border-b bg-slate-50 p-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">{stageConfig.label}</h2>
+            <h2 className="text-2xl font-bold">{stageConfig.label} — {lenderTitle}</h2>
             <p className="mt-1 text-sm text-slate-600">
               השורה הראשית כוללת את פרטי המוצר והסכומים. בהלוואות נפתחת שורת משנה ללוח סילוקין, ובמידת הצורך שורת פעימות. המוצרים בפופ־אפ זה שייכים לשלב הפרויקט שנבחר.
             </p>
@@ -3661,6 +3882,7 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
             <thead className="sticky top-0 z-10 bg-white text-slate-600 shadow-sm">
               <tr>
                 <th className="p-2 text-right">שם מוצר</th>
+                <th className="p-2 text-right">מממן</th>
                 <th className="p-2 text-right">סוג</th>
                 <th className="p-2 text-right">מטבע</th>
                 <th className="p-2 text-right">שער ביצוע</th>
@@ -3680,6 +3902,14 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
                     <tr className="border-b align-top">
                       <td className="p-2">
                         <input value={product.name} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" />
+                      </td>
+                      <td className="p-2">
+                        <input
+                          value={product.lenderName || (isOtherLenderModal ? "מממן אחר" : "הבנק")}
+                          onChange={(event) => updateProduct(product.id, "lenderName", event.target.value)}
+                          disabled={!isOtherLenderModal}
+                          className={`w-32 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200 ${!isOtherLenderModal ? "bg-slate-100 text-slate-500" : ""}`}
+                        />
                       </td>
                       <td className="p-2">
                         <select
@@ -3766,7 +3996,12 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
                           </div>
                         )}
                       </td>
-                      <td className="p-2"><NumberCell value={product.rate} onChange={(v) => updateProduct(product.id, "rate", clampNumber(v, 0, 10))} /></td>
+                      <td className="p-2">
+                        <NumberCell value={product.rate} onChange={(v) => updateProduct(product.id, "rate", clampNumber(v, 0, 20))} />
+                        {rule.isLoan && Number(product.customerRate) > 0 && (
+                          <div className="mt-1 text-[11px] text-slate-400">מחיר צל: {Number(product.customerRate) > 0 ? `${(Math.max(0, Number(product.customerRate) || 0) - Math.max(0, Number(product.rate) || 0)).toFixed(2)}%` : "—"}</div>
+                        )}
+                      </td>
                       <td className="p-2">
                         <NumberCell value={product.ccf} onChange={(v) => updateProduct(product.id, "ccf", clampNumber(v, 0, 100))} />
                         {rule.isGuaranteeFacility && (
@@ -3795,8 +4030,8 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
 
                     {rule.isLoan && (
                       <tr className="border-b bg-slate-50/80">
-                        <td colSpan={9} className="p-3">
-                          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+                        <td colSpan={10} className="p-3">
+                          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-8">
                             <FieldBox title="תקופת הלוואה, חודשים">
                               <MonthsCell
                                 value={Math.round((product.termYears ?? 6) * 12)}
@@ -3805,6 +4040,20 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
                                 onChange={(v) => updateProduct(product.id, "termYears", clampNumber(v, 12, 420) / 12)}
                                 onBlur={(v) => updateProduct(product.id, "termYears", clampNumber(v || 12, 12, 420) / 12)}
                               />
+                            </FieldBox>
+
+                            <FieldBox title="בסיס ההלוואה">
+                              <input
+                                value={product.interestBase || ""}
+                                onChange={(event) => updateProduct(product.id, "interestBase", event.target.value)}
+                                placeholder="צמוד מדד / SOFR 3M / יוריבור 3M"
+                                className="w-full rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200"
+                              />
+                            </FieldBox>
+
+                            <FieldBox title="ריבית ללקוח, %">
+                              <NumberCell wide value={product.customerRate ?? 0} onChange={(v) => updateProduct(product.id, "customerRate", clampNumber(v, 0, 30))} />
+                              <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Number(product.customerRate) > 0 ? `${(Math.max(0, Number(product.customerRate) || 0) - Math.max(0, Number(product.rate) || 0)).toFixed(2)}%` : "—"}</div>
                             </FieldBox>
 
                             <FieldBox title="לוח סילוקין">
@@ -3876,7 +4125,7 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
 
                     {rule.isPhasedLoan && (
                       <tr className="border-b bg-orange-50/70">
-                        <td colSpan={9} className="p-3">
+                        <td colSpan={10} className="p-3">
                           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                             <FieldBox title="תדירות פעימות">
                               <select
@@ -3915,7 +4164,7 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
 
                     {rule.isGuaranteeFacility && (
                       <tr className="border-b bg-amber-50/70">
-                        <td colSpan={9} className="p-3">
+                        <td colSpan={10} className="p-3">
                           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                             {INFRA_GUARANTEE_FRAME_FIELDS.map(({ field, label }, index) => (
                               <FieldBox key={field} title={label}>
@@ -3959,7 +4208,7 @@ function InfraProductsModal({ products, setProducts, projectCurrency, stage = "c
   );
 }
 
-function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
+function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
   const updateFee = (id, field, value) => {
     setFees((rows) =>
       (rows || []).map((row) => {
@@ -3967,11 +4216,11 @@ function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
         const next = { ...row, [field]: value };
         if (field === "pct") {
           next.amountMode = "pct";
-          next.amount = projectTotalScope * (clampNumber(value, 0, 100) / 100);
+          next.amount = feeBaseAmount * (clampNumber(value, 0, 100) / 100);
         }
         if (field === "amount") {
           next.amountMode = "amount";
-          next.pct = projectTotalScope > 0 ? (clampNumber(value, 0, 10000000) / projectTotalScope) * 100 : 0;
+          next.pct = feeBaseAmount > 0 ? (clampNumber(value, 0, 10000000) / feeBaseAmount) * 100 : 0;
         }
         return next;
       })
@@ -3986,7 +4235,7 @@ function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
   };
 
   const removeFee = (id) => setFees((rows) => (rows || []).filter((row) => row.id !== id));
-  const analysis = calculateInfrastructureFees(fees, projectTotalScope, 99, 0, 99);
+  const analysis = calculateInfrastructureFees(fees, feeBaseAmount, 99, 0, 99);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
@@ -4015,7 +4264,7 @@ function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
             <thead className="sticky top-0 z-10 bg-white text-slate-600 shadow-sm">
               <tr>
                 <th className="p-2 text-right">סוג עמלה</th>
-                <th className="p-2 text-right">אחוז מהיקף הפרויקט</th>
+                <th className="p-2 text-right">אחוז מחלק הבנק</th>
                 <th className="p-2 text-right">סכום ₪k</th>
                 <th className="p-2 text-right">פריסה בשנים</th>
                 <th className="p-2 text-right">מועד גבייה</th>
@@ -4025,8 +4274,9 @@ function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
             <tbody>
               {(fees || []).map((fee) => {
                 const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
-                const resolvedAmount = Math.max(0, Number(fee.amount) || 0) || projectTotalScope * ((Number(fee.pct) || 0) / 100);
-                const resolvedPct = projectTotalScope > 0 ? (resolvedAmount / projectTotalScope) * 100 : Number(fee.pct) || 0;
+                const amountMode = fee.amountMode || (Number(fee.amount) > 0 ? "amount" : "pct");
+                const resolvedAmount = amountMode === "pct" ? feeBaseAmount * ((Number(fee.pct) || 0) / 100) : Math.max(0, Number(fee.amount) || 0);
+                const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : Number(fee.pct) || 0;
                 return (
                   <tr key={fee.id} className="border-b align-top">
                     <td className="p-2">
@@ -4035,12 +4285,12 @@ function InfraFeesModal({ fees, setFees, projectTotalScope, onClose }) {
                       </select>
                     </td>
                     <td className="p-2">
-                      <NumberCell value={resolvedPct} disabled={!config.allowPct} onChange={(v) => updateFee(fee.id, "pct", clampNumber(v, 0, 100))} />
+                      <NumberCell value={resolvedPct} disabled={!config.allowPct} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "pct", pct: clampNumber(v, 0, 100), amount: 0 } : row))} />
                       {!config.allowPct && <div className="mt-1 text-[11px] text-slate-400">מחושב מהסכום</div>}
                     </td>
                     <td className="p-2">
-                      <NumberCell value={resolvedAmount} onChange={(v) => updateFee(fee.id, "amount", clampNumber(v, 0, 10000000))} />
-                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז או סכום, השני יושלם</div>
+                      <NumberCell value={resolvedAmount} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "amount", amount: clampNumber(v, 0, 10000000) } : row))} />
+                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז מחלק הבנק או סכום, השני יושלם</div>
                     </td>
                     <td className="p-2">
                       <NumberCell value={fee.spreadYears ?? 1} disabled={config.timing !== "spread"} onChange={(v) => updateFee(fee.id, "spreadYears", clampNumber(v, 1, 35))} />
@@ -4320,6 +4570,10 @@ function InfrastructureProjectPanel({
   setProjectTotalScope,
   bankSharePct,
   setBankSharePct,
+  organizedByBank,
+  setOrganizedByBank,
+  arrangerName,
+  setArrangerName,
   discountRate,
   setDiscountRate,
   depositBalance,
@@ -4391,6 +4645,21 @@ function InfrastructureProjectPanel({
               <MonthsMetricInput label="תחילת פירעון, חודשים" valueYears={repaymentStartYear} setValueYears={setRepaymentStartYear} minMonths={1} maxMonths={420} />
               <MetricInput label={`היקף פרויקט כולל, ${INFRA_CURRENCIES[projectCurrency]?.symbol || "₪"}k`} value={projectTotalScope} setValue={setProjectTotalScope} min={0} max={10000000} step={1000} />
               <MetricInput label="חלק הבנק בסינדיקציה, %" value={bankSharePct} setValue={setBankSharePct} min={0} max={100} step={1} />
+              <div className="space-y-2 rounded-2xl bg-white p-3">
+                <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-600">
+                  <span>הפרויקט בארגון הבנק</span>
+                  <Checkbox checked={organizedByBank} onChange={setOrganizedByBank} />
+                </label>
+                {!organizedByBank && (
+                  <input
+                    value={arrangerName}
+                    onChange={(event) => setArrangerName(event.target.value)}
+                    placeholder="שם הגוף המארגן"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                  />
+                )}
+                <div className="text-[11px] text-slate-500">מוצג בפלט ובניתוח סינדיקציה.</div>
+              </div>
               <MetricInput label="ריבית היוון, %" value={discountRate} setValue={setDiscountRate} min={0} max={20} step={0.1} help="כרגע ברירת המחדל היא 0%, ולכן אין השפעת היוון. בעתיד ניתן להשתמש בשדה לחישוב NPV של הכנסות הפרויקט." />
               <label className="space-y-2">
                 <span className="text-sm font-medium text-slate-600">מטבע ברירת מחדל לפרויקט</span>
@@ -4418,36 +4687,41 @@ function InfrastructureProjectPanel({
               <div className="space-y-3">
                 {Object.entries(INFRA_PRODUCT_STAGES).map(([stageKey, stageConfig]) => {
                   const stageProducts = products.filter((product) => (product.stage || "construction") === stageKey);
-                  const stageTotal = stageProducts.reduce((sum, product) => {
+                  const bankProducts = stageProducts.filter((product) => (product.lenderType || "bank") === "bank");
+                  const otherProducts = stageProducts.filter((product) => (product.lenderType || "bank") === "other");
+                  const summarize = (rows) => rows.reduce((sum, product) => {
                     const currencyCode = product.currency || projectCurrency;
                     const fx = getInfraFxRate(currencyCode, product.fxRate);
                     return sum + Math.max(0, Number(product.amount) || 0) * fx;
                   }, 0);
                   return (
-                    <button
-                      key={stageKey}
-                      type="button"
-                      onClick={() => onOpenProducts(stageKey)}
-                      className="w-full rounded-2xl bg-white p-3 text-right shadow-sm transition hover:bg-orange-100"
-                    >
-                      <div className="flex items-center justify-between gap-3">
+                    <div key={stageKey} className="rounded-2xl bg-white p-3 shadow-sm">
+                      <div className="mb-2 flex items-center justify-between gap-3">
                         <div>
                           <div className="font-bold text-slate-800">{stageConfig.label}</div>
-                          <div className="text-xs text-slate-500">לחצי להזנת מוצרים בשלב {stageConfig.shortLabel}</div>
+                          <div className="text-xs text-slate-500">הזנה נפרדת לחלק הבנק ולמממנים אחרים</div>
                         </div>
-                        <div className="text-left">
-                          <div className="text-sm font-bold text-orange-700">{formatK(stageTotal)}</div>
-                          <div className="text-xs text-slate-500">{stageProducts.length} מוצרים</div>
-                        </div>
+                        <div className="text-left text-xs text-slate-500">{stageProducts.length} מוצרים</div>
                       </div>
-                    </button>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <button type="button" onClick={() => onOpenProducts(stageKey, "bank")} className="rounded-xl bg-orange-50 p-2 text-right transition hover:bg-orange-100">
+                          <div className="font-semibold text-orange-800">אשראי במימון הבנק</div>
+                          <div className="text-xs text-slate-500">{bankProducts.length} מוצרים · {formatK(summarize(bankProducts))}</div>
+                        </button>
+                        <button type="button" onClick={() => onOpenProducts(stageKey, "other")} className="rounded-xl bg-sky-50 p-2 text-right transition hover:bg-sky-100">
+                          <div className="font-semibold text-sky-800">אשראי מממנים אחרים</div>
+                          <div className="text-xs text-slate-500">{otherProducts.length} מוצרים · {formatK(summarize(otherProducts))}</div>
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
                 <SummaryBox title="סה״כ מוצרים" value={`${products.length}`} />
-                <SummaryBox title="סך מוצרים" value={formatK(forecast.totalFacility)} />
-                <SummaryBox title="הכנסות מוצרים" value={formatK(forecast.totalIncome - forecast.totalAdditionalIncome)} positive />
+                <SummaryBox title="מימון הבנק" value={formatK(forecast.totalFacility)} />
+                <SummaryBox title="כל הפרויקט" value={formatK(forecast.totalProjectFacility)} />
+                <SummaryBox title="הכנסות מוצרים" value={formatK(forecast.totalIncome - forecast.totalAdditionalIncome - forecast.feeAnalysis.totalIncome)} positive />
               </div>
             </div>
 
@@ -4548,6 +4822,7 @@ function InfrastructureProjectPanel({
           </div>
           <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-2">
             <TabButton active={projectChartTab === "creditRisk"} onClick={() => setProjectChartTab("creditRisk")}>אשראי ו־RWA</TabButton>
+            <TabButton active={projectChartTab === "projectCredit"} onClick={() => setProjectChartTab("projectCredit")}>אשראי ומסגרות — כל הפרויקט</TabButton>
             <TabButton active={projectChartTab === "incomeReturn"} onClick={() => setProjectChartTab("incomeReturn")}>הכנסות ותשואה</TabButton>
           </div>
         </div>
@@ -4567,6 +4842,27 @@ function InfrastructureProjectPanel({
                   <Line type="monotone" dataKey="averageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חבות / חשיפה ממוצעת" />
                   <Line type="monotone" dataKey="rwa" stroke="#22c55e" strokeWidth={3} dot={false} name="נכסי סיכון" />
                   <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק בפרויקט" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {projectChartTab === "projectCredit" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold">אשראי ומסגרות בכל הפרויקט — כולל מממנים אחרים</div>
+            <div className="h-96 min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={forecast.rows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                  <Tooltip formatter={(value) => formatK(Number(value))} />
+                  <Legend />
+                  <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת אשראי כל הפרויקט" />
+                  <Line type="monotone" dataKey="projectAverageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה ממוצעת כל הפרויקט" />
+                  <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                  <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
