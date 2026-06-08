@@ -13,11 +13,9 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
-  Calculator,
   Landmark,
   PackagePlus,
   ShieldCheck,
-  SlidersHorizontal,
   TrendingUp,
   Printer,
 } from "lucide-react";

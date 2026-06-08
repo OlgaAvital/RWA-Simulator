@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Calculator } from "lucide-react";
 import {
   CartesianGrid,
   Line,
