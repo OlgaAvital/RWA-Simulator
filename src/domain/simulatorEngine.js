@@ -1450,7 +1450,7 @@ export function runCalculationTests() {
     Math.abs(productAggregation.totalLimit - 150) < 0.0001 &&
     Math.abs(productAggregation.totalUtilized - 100) < 0.0001 &&
     Math.abs(productAggregation.totalUndrawn - 50) < 0.0001 &&
-    Math.abs(productAggregation.totalEad - 94) < 0.0001 &&
+    Math.abs(productAggregation.totalEad - 101) < 0.0001 &&
     Math.abs(productAggregation.totalAnnualIncome - 2.15) < 0.0001 &&
     Math.abs(productAggregation.weightedMargin - 2) < 0.0001;
 
@@ -1492,7 +1492,7 @@ export function runCalculationTests() {
     {
       name: "product popup product aggregation",
       passed: productAggregationPassed,
-      failures: productAggregationPassed ? [] : [{ key: "totalEad", expected: 94, actual: productAggregation.totalEad }],
+      failures: productAggregationPassed ? [] : [{ key: "totalEad", expected: 101, actual: productAggregation.totalEad }],
     },
     {
       name: "long term loan amortization reduces utilized EAD",

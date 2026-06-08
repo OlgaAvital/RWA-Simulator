@@ -22,7 +22,7 @@ import {
   Printer,
 } from "lucide-react";
 
-import * as simulatorEngine from "./domain/simulatorEngine.js";
+import * as engine from "./domain/simulatorEngine.js";
 
 import {
   Badge,
@@ -60,39 +60,6 @@ import {
 export { calculateRwaResult } from "./domain/simulatorEngine.js";
 
 export default function RwaReturnSimulator() {
-  const {
-    DEFAULT_INFRA_GUARANTEE_FRAME_PCTS,
-    DEFAULT_INFRA_PULSE_PCT,
-    ENTITY_STATUS,
-    INFRA_CURRENCIES,
-    INFRA_FEE_TIMING_OPTIONS,
-    INFRA_FEE_TYPES,
-    INFRA_GUARANTEE_FRAME_FIELDS,
-    INFRA_PRODUCT_STAGES,
-    INFRA_PRODUCT_TYPES,
-    INFRA_PULSE_FIELDS,
-    PRODUCT_TYPES,
-    RATING_RULES,
-    REAL_ESTATE_EXPOSURE_RULES,
-    SECURITY_RULES,
-    SEGMENTS,
-    calculateAdditionalIncome,
-    calculateEligibleSecurities,
-    calculateInfrastructureFees,
-    calculateInfrastructureProjectForecast,
-    calculateMonthlyCreditForecast,
-    calculateProductRows,
-    calculateRwaResult,
-    clampNumber,
-    convertIlsToInfraCurrency,
-    formatInputNumber,
-    formatK,
-    formatM,
-    formatYearsFromMonths,
-    getInfraFxRate,
-    requiresSecurityRating,
-    runCalculationTests,
-  } = simulatorEngine;
   const historyRef = useRef([]);
   const lastSnapshotKeyRef = useRef("");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -170,23 +137,23 @@ export default function RwaReturnSimulator() {
       graceYears: 1,
       customRepaymentPct: 8,
       pulseFrequency: "annual",
-      pulse1Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse2Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse3Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse4Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse5Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse6Pct: DEFAULT_INFRA_PULSE_PCT,
-      pulse7Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse8Pct: DEFAULT_INFRA_PULSE_PCT,
-        guaranteeFrameYear1Pct: 100,
-        guaranteeFrameYear2Pct: 90,
-        guaranteeFrameYear3Pct: 75,
-        guaranteeFrameYear4Pct: 60,
-        guaranteeFrameYear5Pct: 45,
-        guaranteeFrameYear6Pct: 30,
-        guaranteeFrameYear7Pct: 15,
-        guaranteeFrameYear8Pct: 0,
-        drawdownYear1: 100,
+      pulse1Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse2Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse3Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse4Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse5Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse6Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse7Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      pulse8Pct: engine.DEFAULT_INFRA_PULSE_PCT,
+      guaranteeFrameYear1Pct: 100,
+      guaranteeFrameYear2Pct: 90,
+      guaranteeFrameYear3Pct: 75,
+      guaranteeFrameYear4Pct: 60,
+      guaranteeFrameYear5Pct: 45,
+      guaranteeFrameYear6Pct: 30,
+      guaranteeFrameYear7Pct: 15,
+      guaranteeFrameYear8Pct: 0,
+      drawdownYear1: 100,
       drawdownYear2: 0,
       drawdownYear3: 0,
       drawdownYear4: 0,
@@ -497,10 +464,10 @@ export default function RwaReturnSimulator() {
     saveSnapshot();
   };
 
-  const productsAnalysis = useMemo(() => calculateProductRows(products), [products]);
+  const productsAnalysis = useMemo(() => engine.calculateProductRows(products), [products]);
   const additionalIncome = useMemo(
     () =>
-      calculateAdditionalIncome({
+      engine.calculateAdditionalIncome({
         depositBalance,
         depositMargin,
         accountFees,
@@ -511,17 +478,17 @@ export default function RwaReturnSimulator() {
       }),
     [depositBalance, depositMargin, accountFees, guaranteeFees, fxFees, tradeFinanceFees, otherFees]
   );
-  const ratingConfig = RATING_RULES[spRating] || RATING_RULES.unrated;
-  const realEstateConfig = REAL_ESTATE_EXPOSURE_RULES[realEstateExposureType] || REAL_ESTATE_EXPOSURE_RULES.none;
-  const securitiesAnalysis = useMemo(() => calculateEligibleSecurities(securities), [securities]);
-  const entityConfig = ENTITY_STATUS[entityStatus] || ENTITY_STATUS.regular;
+  const ratingConfig = engine.RATING_RULES[spRating] || engine.RATING_RULES.unrated;
+  const realEstateConfig = engine.REAL_ESTATE_EXPOSURE_RULES[realEstateExposureType] || engine.REAL_ESTATE_EXPOSURE_RULES.none;
+  const securitiesAnalysis = useMemo(() => engine.calculateEligibleSecurities(securities), [securities]);
+  const entityConfig = engine.ENTITY_STATUS[entityStatus] || engine.ENTITY_STATUS.regular;
   const regulatoryRiskWeight = entityConfig.riskWeight;
   const ratingRiskWeight = ratingConfig.riskWeight;
   const realEstateRiskWeight = realEstateConfig.riskWeightOverride;
 
   const result = useMemo(
     () =>
-      calculateRwaResult({
+      engine.calculateRwaResult({
         exposure: productsAnalysis.totalUtilized,
         productEad: productsAnalysis.totalEad,
         productAnnualIncome: productsAnalysis.totalAnnualIncome,
@@ -560,7 +527,7 @@ export default function RwaReturnSimulator() {
     ]
   );
 
-  const calculationTests = useMemo(() => runCalculationTests(), []);
+  const calculationTests = useMemo(() => engine.runCalculationTests(), []);
   const allTestsPassed = calculationTests.every((test) => test.passed);
 
   const waterfall = useMemo(
@@ -638,13 +605,13 @@ export default function RwaReturnSimulator() {
   );
 
   const creditUtilizationForecast = useMemo(
-    () => calculateMonthlyCreditForecast(productsAnalysis.rows, result.effectiveRiskWeight),
+    () => engine.calculateMonthlyCreditForecast(productsAnalysis.rows, result.effectiveRiskWeight),
     [productsAnalysis.rows, result.effectiveRiskWeight]
   );
 
   const infrastructureForecast = useMemo(
     () =>
-      calculateInfrastructureProjectForecast({
+      engine.calculateInfrastructureProjectForecast({
         projectYears: infraProjectYears,
         constructionYears: infraConstructionYears,
         rampUpYears: infraRampUpYears,
@@ -701,7 +668,7 @@ export default function RwaReturnSimulator() {
   const hasRiskSale = productsAnalysis.totalRiskSaleSaleAmount > 0;
   const resultBeforeRiskSale = useMemo(
     () =>
-      calculateRwaResult({
+      engine.calculateRwaResult({
         exposure: productsAnalysis.totalUtilized,
         productEad: productsAnalysis.totalEad,
         productAnnualIncome: productsAnalysis.totalAnnualIncome + productsAnalysis.totalRiskSaleCost,
@@ -864,8 +831,8 @@ export default function RwaReturnSimulator() {
               <MetricInput label="RWA קיים, ₪k" value={existingRwa} setValue={setExistingRwa} min={0} max={1000000} />
               <MetricInput label="הכנסה שנתית קיימת, ₪k" value={existingAnnualIncome} setValue={setExistingAnnualIncome} min={0} max={100000} step={10} />
               <SummaryBox title="תשואה ל־RWA קיימת" value={`${result.existingReturnOnRwa.toFixed(2)}%`} positive />
-              <SummaryBox title="הון קיים נדרש" value={formatK(result.existingCapital)} />
-              <SummaryBox title="מצב אחרי עסקה" value={formatK(result.totalRwaAfterNewDeal)} positive />
+              <SummaryBox title="הון קיים נדרש" value={engine.formatK(result.existingCapital)} />
+              <SummaryBox title="מצב אחרי עסקה" value={engine.formatK(result.totalRwaAfterNewDeal)} positive />
             </div>
           </div>
         )}
@@ -954,9 +921,9 @@ export default function RwaReturnSimulator() {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-center text-sm">
-                <SummaryBox title="חבות ברוטו" value={formatK(productsAnalysis.totalLimit)} />
-                <SummaryBox title="צפי ניצול" value={formatK(productsAnalysis.totalUtilized)} />
-                <SummaryBox title="EAD" value={formatK(productsAnalysis.totalEad)} positive />
+                <SummaryBox title="חבות ברוטו" value={engine.formatK(productsAnalysis.totalLimit)} />
+                <SummaryBox title="צפי ניצול" value={engine.formatK(productsAnalysis.totalUtilized)} />
+                <SummaryBox title="EAD" value={engine.formatK(productsAnalysis.totalEad)} positive />
                 <SummaryBox title="מרווח משוקלל" value={`${productsAnalysis.weightedMargin.toFixed(2)}%`} positive />
               </div>
               <div className="mt-3 text-xs text-orange-900">
@@ -971,7 +938,7 @@ export default function RwaReturnSimulator() {
                 onChange={(event) => setSegment(event.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-orange-200 transition focus:ring-4"
               >
-                {Object.entries(SEGMENTS).map(([value, label]) => (
+                {Object.entries(engine.SEGMENTS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
@@ -991,7 +958,7 @@ export default function RwaReturnSimulator() {
                 }}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-orange-200 transition focus:ring-4"
               >
-                {Object.entries(ENTITY_STATUS).map(([value, config]) => (
+                {Object.entries(engine.ENTITY_STATUS).map(([value, config]) => (
                   <option key={value} value={value}>
                     {config.label}
                   </option>
@@ -1006,7 +973,7 @@ export default function RwaReturnSimulator() {
                 onChange={(event) => setSpRating(event.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-orange-200 transition focus:ring-4"
               >
-                {Object.entries(RATING_RULES).map(([value, config]) => (
+                {Object.entries(engine.RATING_RULES).map(([value, config]) => (
                   <option key={value} value={value}>
                     {config.label}
                   </option>
@@ -1024,7 +991,7 @@ export default function RwaReturnSimulator() {
                 onChange={(event) => setRealEstateExposureType(event.target.value)}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-orange-200 transition focus:ring-4"
               >
-                {Object.entries(REAL_ESTATE_EXPOSURE_RULES).map(([value, config]) => (
+                {Object.entries(engine.REAL_ESTATE_EXPOSURE_RULES).map(([value, config]) => (
                   <option key={value} value={value}>
                     {config.label}
                   </option>
@@ -1069,9 +1036,9 @@ export default function RwaReturnSimulator() {
               <MetricInput label="עמלות סחר חוץ, ₪k" value={tradeFinanceFees} setValue={setTradeFinanceFees} min={0} max={20000} step={10} />
               <MetricInput label="עמלות אחרות, ₪k" value={otherFees} setValue={setOtherFees} min={0} max={20000} step={10} />
               <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                <SummaryBox title="פקדונות" value={formatK(additionalIncome.annualDepositIncome)} positive />
-                <SummaryBox title="עמלות" value={formatK(additionalIncome.totalFeeIncome)} positive />
-                <SummaryBox title="סה״כ" value={formatK(additionalIncome.totalAdditionalIncome)} positive />
+                <SummaryBox title="פקדונות" value={engine.formatK(additionalIncome.annualDepositIncome)} positive />
+                <SummaryBox title="עמלות" value={engine.formatK(additionalIncome.totalFeeIncome)} positive />
+                <SummaryBox title="סה״כ" value={engine.formatK(additionalIncome.totalAdditionalIncome)} positive />
               </div>
             </div>
           </Panel>
@@ -1098,8 +1065,8 @@ export default function RwaReturnSimulator() {
                 </button>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                <SummaryBox title="שווי שוק" value={formatK(securitiesAnalysis.totalMarketValue)} />
-                <SummaryBox title="שווי כשיר" value={formatK(securitiesAnalysis.totalEligibleValue)} positive />
+                <SummaryBox title="שווי שוק" value={engine.formatK(securitiesAnalysis.totalMarketValue)} />
+                <SummaryBox title="שווי כשיר" value={engine.formatK(securitiesAnalysis.totalEligibleValue)} positive />
                 <SummaryBox title="לא כשירים" value={`${securitiesAnalysis.ineligibleCount}`} warning />
               </div>
             </div>
@@ -1115,10 +1082,10 @@ export default function RwaReturnSimulator() {
             <div className="mb-5 rounded-3xl bg-slate-100 p-4 text-sm">
               <div className="flex justify-between">
                 <span>סה״כ בטוחות פיננסיות כשירות לחישוב</span>
-                <b>{formatK(result.totalFinancialCollateral)}</b>
+                <b>{engine.formatK(result.totalFinancialCollateral)}</b>
               </div>
               <div className="mt-1 text-xs text-slate-600">
-                כולל {formatK(result.securitiesCollateralEligibleValue)} מני״ע לאחר haircut + {formatK(result.manualCollateral)} בטוחות אחרות. יש להזין בשדות הידניים רק סכומים שכבר נבדקו ונמצאו כשירים.
+                כולל {engine.formatK(result.securitiesCollateralEligibleValue)} מני״ע לאחר haircut + {engine.formatK(result.manualCollateral)} בטוחות אחרות. יש להזין בשדות הידניים רק סכומים שכבר נבדקו ונמצאו כשירים.
               </div>
             </div>
 
@@ -1133,11 +1100,11 @@ export default function RwaReturnSimulator() {
             <div className="mb-5 rounded-3xl bg-violet-50 p-4 text-sm text-violet-900">
               <div className="flex justify-between gap-3">
                 <span>ערבות מוכרת בפועל לאחר בטוחות</span>
-                <b>{formatK(result.eligibleGuarantee)}</b>
+                <b>{engine.formatK(result.eligibleGuarantee)}</b>
               </div>
               <div className="mt-2 flex justify-between gap-3">
                 <span>חיסכון RWA מערבות CRM</span>
-                <b>{formatK(result.guaranteeRwaSaving)}</b>
+                <b>{engine.formatK(result.guaranteeRwaSaving)}</b>
               </div>
               <div className="mt-1 text-xs">
                 הערבות כאן היא CRM שמפחיתה RWA רק על יתרת החשיפה שלא כוסתה בבטוחות. יש להזין רק את סכום הערבות הכשיר והמוכר להפחתת RWA. ערבויות ביצוע / חוק מכר / כספיות בתוך סל המוצרים הן מוצרי חשיפה שמייצרים EAD לפי CCF.
@@ -1173,25 +1140,25 @@ export default function RwaReturnSimulator() {
               {viewMode === "singleDeal" ? (
                 <>
                   <ResultSection title="נכסי סיכון">
-                    <Kpi title="חבות מלאה ברוטו" value={formatK(productsAnalysis.totalLimit)} />
-                    <Kpi title="חשיפה לאחר CCF / EAD" value={formatK(result.ead)} />
-                    <Kpi title="חיסכון RWA מבטחונות" value={formatK(result.collateralRwaSaving)} positive />
-                    <Kpi title="חיסכון RWA מערבות CRM" value={formatK(result.guaranteeRwaSaving)} positive />
-                    <Kpi title="חיסכון RWA מ-PSE/דירוג/סיווג" value={formatK(Math.max(0, result.rwaBase - result.ead * (result.effectiveRiskWeight / 100)))} positive />
-                    <Kpi title="RWA סופי" value={formatK(result.rwaAfter)} positive />
+                    <Kpi title="חבות מלאה ברוטו" value={engine.formatK(productsAnalysis.totalLimit)} />
+                    <Kpi title="חשיפה לאחר CCF / EAD" value={engine.formatK(result.ead)} />
+                    <Kpi title="חיסכון RWA מבטחונות" value={engine.formatK(result.collateralRwaSaving)} positive />
+                    <Kpi title="חיסכון RWA מערבות CRM" value={engine.formatK(result.guaranteeRwaSaving)} positive />
+                    <Kpi title="חיסכון RWA מ-PSE/דירוג/סיווג" value={engine.formatK(Math.max(0, result.rwaBase - result.ead * (result.effectiveRiskWeight / 100)))} positive />
+                    <Kpi title="RWA סופי" value={engine.formatK(result.rwaAfter)} positive />
                   </ResultSection>
 
                   <ResultSection title="הכנסות ותשואה">
                     <Kpi title="מרווח אשראי משוקלל" value={`${productsAnalysis.weightedMargin.toFixed(2)}%`} />
-                    <Kpi title="הכנסות מאשראי" value={formatK(result.productAnnualIncome)} positive />
-                    <Kpi title="הכנסות נוספות" value={formatK(additionalIncome.totalAdditionalIncome)} positive />
-                    <Kpi title="הכנסה שנתית כוללת" value={formatK(result.annualIncome)} positive />
+                    <Kpi title="הכנסות מאשראי" value={engine.formatK(result.productAnnualIncome)} positive />
+                    <Kpi title="הכנסות נוספות" value={engine.formatK(additionalIncome.totalAdditionalIncome)} positive />
+                    <Kpi title="הכנסה שנתית כוללת" value={engine.formatK(result.annualIncome)} positive />
                     {hasRiskSale && <Kpi title="תשואה לפני מכירה" value={`${resultBeforeRiskSale.returnOnRwaAfter.toFixed(2)}%`} />}
                     {hasRiskSale && <Kpi title="תשואה אחרי מכירה" value={`${result.returnOnRwaAfter.toFixed(2)}%`} positive />}
                     {!hasRiskSale && <Kpi title="תשואה לנכסי סיכון" value={`${result.returnOnRwaAfter.toFixed(2)}%`} positive />}
                     <Kpi
                       title="הון נדרש שנחסך"
-                      value={formatK(result.capitalSaving)}
+                      value={engine.formatK(result.capitalSaving)}
                       positive
                       help="מחושב כחיסכון ב-RWA כפול יחס ההון הפנימי. יחס ההון הפנימי הוא שיעור ההון שהבנק מקצה מול נכסי סיכון לצורכי ניהול/רגולציה. לדוגמה: חיסכון RWA של ₪10,000k × יחס הון 12.5% = ₪1,250k הון נדרש שנחסך."
                     />
@@ -1206,28 +1173,28 @@ export default function RwaReturnSimulator() {
               ) : (
                 <>
                   <ResultSection title="נכסי סיכון — עסקה חדשה">
-                    <Kpi title="חבות ברוטו עסקה חדשה" value={formatK(productsAnalysis.totalLimit)} />
-                    <Kpi title="חשיפה לאחר CCF / EAD" value={formatK(result.incrementalEad)} />
-                    <Kpi title="חיסכון RWA מבטחונות" value={formatK(result.collateralRwaSaving)} positive />
-                    <Kpi title="חיסכון RWA מערבות CRM" value={formatK(result.guaranteeRwaSaving)} positive />
-                    <Kpi title="RWA עסקה חדשה" value={formatK(result.incrementalRwa)} positive />
+                    <Kpi title="חבות ברוטו עסקה חדשה" value={engine.formatK(productsAnalysis.totalLimit)} />
+                    <Kpi title="חשיפה לאחר CCF / EAD" value={engine.formatK(result.incrementalEad)} />
+                    <Kpi title="חיסכון RWA מבטחונות" value={engine.formatK(result.collateralRwaSaving)} positive />
+                    <Kpi title="חיסכון RWA מערבות CRM" value={engine.formatK(result.guaranteeRwaSaving)} positive />
+                    <Kpi title="RWA עסקה חדשה" value={engine.formatK(result.incrementalRwa)} positive />
                   </ResultSection>
 
                   <ResultSection title="הכנסות ותשואה — עסקה חדשה">
                     <Kpi title="מרווח אשראי משוקלל" value={`${productsAnalysis.weightedMargin.toFixed(2)}%`} />
-                    <Kpi title="הכנסות מאשראי" value={formatK(result.productAnnualIncome)} positive />
-                    <Kpi title="הכנסות נוספות" value={formatK(additionalIncome.totalAdditionalIncome)} positive />
-                    <Kpi title="הכנסה שנתית עסקה" value={formatK(result.incrementalAnnualIncome)} positive />
+                    <Kpi title="הכנסות מאשראי" value={engine.formatK(result.productAnnualIncome)} positive />
+                    <Kpi title="הכנסות נוספות" value={engine.formatK(additionalIncome.totalAdditionalIncome)} positive />
+                    <Kpi title="הכנסה שנתית עסקה" value={engine.formatK(result.incrementalAnnualIncome)} positive />
                     {hasRiskSale && <Kpi title="תשואה לפני מכירה" value={`${resultBeforeRiskSale.returnOnRwaAfter.toFixed(2)}%`} />}
                     {hasRiskSale && <Kpi title="תשואה אחרי מכירה" value={`${result.returnOnRwaAfter.toFixed(2)}%`} positive />}
                     {!hasRiskSale && <Kpi title="תשואה לנכסי סיכון — עסקה" value={`${result.returnOnRwaAfter.toFixed(2)}%`} positive />}
-                    <Kpi title="הון נוסף נדרש" value={formatK(result.incrementalCapital)} />
+                    <Kpi title="הון נוסף נדרש" value={engine.formatK(result.incrementalCapital)} />
                   </ResultSection>
 
                   <ResultSection title="השפעה מצטברת על לקוח קיים">
-                    <Kpi title="RWA מצב קיים" value={formatK(result.existingRwa)} muted />
-                    <Kpi title="RWA כולל אחרי" value={formatK(result.totalRwaAfterNewDeal)} positive />
-                    <Kpi title="הכנסה כוללת אחרי" value={formatK(result.totalAnnualIncomeAfterNewDeal)} positive />
+                    <Kpi title="RWA מצב קיים" value={engine.formatK(result.existingRwa)} muted />
+                    <Kpi title="RWA כולל אחרי" value={engine.formatK(result.totalRwaAfterNewDeal)} positive />
+                    <Kpi title="הכנסה כוללת אחרי" value={engine.formatK(result.totalAnnualIncomeAfterNewDeal)} positive />
                     <Kpi title="תשואה לנכסי סיכון כולל" value={`${result.totalReturnOnRwaAfterNewDeal.toFixed(2)}%`} positive />
                   </ResultSection>
                 </>
@@ -1289,8 +1256,8 @@ export default function RwaReturnSimulator() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div className="text-lg font-semibold">פירוק עסקה חדשה לפי מוצרים ו־CCF</div>
                 <div className="flex flex-wrap gap-2">
-                  <Badge tone="orange">חבות ברוטו: {formatK(productsAnalysis.totalLimit)}</Badge>
-                  <Badge tone="blue">EAD: {formatK(productsAnalysis.totalEad)}</Badge>
+                  <Badge tone="orange">חבות ברוטו: {engine.formatK(productsAnalysis.totalLimit)}</Badge>
+                  <Badge tone="blue">EAD: {engine.formatK(productsAnalysis.totalEad)}</Badge>
                 </div>
               </div>
               <div className="grid gap-5 lg:grid-cols-2">
@@ -1300,7 +1267,7 @@ export default function RwaReturnSimulator() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip formatter={(value) => formatK(Number(value))} />
+                      <Tooltip formatter={(value) => engine.formatK(Number(value))} />
                       <Bar dataKey="utilized" fill="#94a3b8" radius={[12, 12, 0, 0]} name="צפי ניצול" />
                       <Bar dataKey="ead" fill="#f97316" radius={[12, 12, 0, 0]} name="EAD" />
                     </BarChart>
@@ -1319,7 +1286,7 @@ export default function RwaReturnSimulator() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(value) => formatK(Number(value))} />
+                    <Tooltip formatter={(value) => engine.formatK(Number(value))} />
                     <Bar dataKey="value" radius={[12, 12, 0, 0]} fill="#f97316" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -1337,7 +1304,7 @@ export default function RwaReturnSimulator() {
                     <YAxis tick={{ fontSize: 12 }} />
                     <Tooltip
                       formatter={(value, name) =>
-                        name === "returnOnRwa" ? `${Number(value).toFixed(2)}%` : formatK(Number(value))
+                        name === "returnOnRwa" ? `${Number(value).toFixed(2)}%` : engine.formatK(Number(value))
                       }
                     />
                     <Line type="monotone" dataKey="returnOnRwa" stroke="#f97316" strokeWidth={3} dot={{ r: 5 }} name="תשואה ל־RWA" />
@@ -1361,7 +1328,7 @@ export default function RwaReturnSimulator() {
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip formatter={(value) => formatK(Number(value))} />
+                      <Tooltip formatter={(value) => engine.formatK(Number(value))} />
                       <Bar dataKey="ead" fill="#94a3b8" radius={[12, 12, 0, 0]} name="EAD" />
                       <Bar dataKey="rwa" fill="#f97316" radius={[12, 12, 0, 0]} name="RWA" />
                     </BarChart>
@@ -1381,8 +1348,8 @@ export default function RwaReturnSimulator() {
                       {existingPlusNewDeal.map((row) => (
                         <tr className="border-t" key={row.name}>
                           <td className="p-3 font-medium">{row.name}</td>
-                          <td className="p-3">{formatK(row.ead)}</td>
-                          <td className="p-3">{formatK(row.rwa)}</td>
+                          <td className="p-3">{engine.formatK(row.ead)}</td>
+                          <td className="p-3">{engine.formatK(row.rwa)}</td>
                           <td className="p-3">{row.returnOnRwa.toFixed(2)}%</td>
                         </tr>
                       ))}
@@ -1445,7 +1412,7 @@ export default function RwaReturnSimulator() {
                 בהלוואות לזמן ארוך התחזית משתמשת בלוח הסילוקין; במוצר מכירת סיכון ה־RWA יורד רק מהחודש שאחרי מועד המכירה הצפוי.
               </div>
             </div>
-            <Badge tone="blue">פער מסגרת לא מנוצלת: {formatK(creditUtilizationForecast[0]?.gap || 0)} בחודש 1</Badge>
+            <Badge tone="blue">פער מסגרת לא מנוצלת: {engine.formatK(creditUtilizationForecast[0]?.gap || 0)} בחודש 1</Badge>
           </div>
           <div className="h-80 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -1453,7 +1420,7 @@ export default function RwaReturnSimulator() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => formatK(Number(value))} />
+                <Tooltip formatter={(value) => engine.formatK(Number(value))} />
                 <Legend />
                 <Line type="monotone" dataKey="limit" stroke="#64748b" strokeWidth={3} dot={{ r: 4 }} name="מסגרות" />
                 <Line type="monotone" dataKey="utilized" stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} name="ניצול אשראי" />
