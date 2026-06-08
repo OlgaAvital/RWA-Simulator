@@ -1068,6 +1068,15 @@ function calculateInfrastructureProjectForecast(input) {
       const fx = getInfraFxRate(productCurrency, product.fxRate);
       const amountIls = amount * fx;
       const opening = balances[product.id] || 0;
+      const productStageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+      const relativeProductYear = year - productStageStartYear + 1;
+      const isConstructionYear = year <= constructionYears;
+      const feeTiming = product.feeTiming || "fullProjectAnnual";
+      const nonLoanExposureApplies =
+        relativeProductYear >= 1 &&
+        (feeTiming === "oneTimeFirstYear" ? relativeProductYear === 1 :
+        feeTiming === "constructionAnnual" ? isConstructionYear :
+        true);
       const guaranteeFacilityPct = rule.isGuaranteeFacility ? getInfraGuaranteeFacilityPct(product, year, constructionYears, rampUpYears) : 0;
       const guaranteeFacilityLimit = rule.isGuaranteeFacility ? amountIls * guaranteeFacilityPct : 0;
       const guaranteeFacilityUtilizationPct = clampNumber(product.utilizationPct ?? 100, 0, 100) / 100;
@@ -1083,7 +1092,7 @@ function calculateInfrastructureProjectForecast(input) {
       balances[product.id] = closing;
 
       const averageOutstanding = rule.isLoan ? (opening + closing) / 2 : 0;
-      const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : amountIls;
+      const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : nonLoanExposureApplies ? amountIls : 0;
       const ccf = Math.max(0, Number(product.ccf ?? rule.defaultCcf) || 0) / 100;
       const ccfUndrawn = Math.max(0, Number(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 0) || 0) / 100;
       const phasedLoanAfterFinalPulse = rule.isPhasedLoan ? isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears, rampUpYears) : false;
@@ -1102,16 +1111,7 @@ function calculateInfrastructureProjectForecast(input) {
       if (rule.incomeMode === "interest") {
         productIncome = averageOutstanding * rate;
       } else {
-        const timing = product.feeTiming || "fullProjectAnnual";
-        const productStageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
-        const relativeProductYear = year - productStageStartYear + 1;
-        const isConstructionYear = year <= constructionYears;
-        const feeApplies =
-          relativeProductYear >= 1 &&
-          (timing === "oneTimeFirstYear" ? relativeProductYear === 1 :
-          timing === "constructionAnnual" ? isConstructionYear :
-          true);
-        productIncome = feeApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
+        productIncome = nonLoanExposureApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
       }
 
       yearDrawdown += drawdown;
