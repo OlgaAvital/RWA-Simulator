@@ -44,6 +44,7 @@ import {
 
 import {
   AccountLookupModal,
+  ConstructionCreditModal,
   ConstructionProjectPanel,
   DefinitionsPanel,
   Header,
@@ -225,6 +226,65 @@ export default function RwaReturnSimulator() {
   const [constructionSaleLawGuaranteeCcf, setConstructionSaleLawGuaranteeCcf] = useState(50);
   const [constructionGuaranteeCcf, setConstructionGuaranteeCcf] = useState(50);
   const [constructionUndrawnLoanCcf, setConstructionUndrawnLoanCcf] = useState(40);
+  const [constructionSaleLawGuaranteeFinalCcf, setConstructionSaleLawGuaranteeFinalCcf] = useState(20);
+  const [constructionSaleLawGuaranteeReductionStartPct, setConstructionSaleLawGuaranteeReductionStartPct] = useState(80);
+  const [isConstructionCreditModalOpen, setIsConstructionCreditModalOpen] = useState(false);
+  const [constructionCreditProducts, setConstructionCreditProducts] = useState([
+    {
+      id: 1,
+      name: "הלוואת קרקע",
+      productType: "landLoan",
+      amount: 105000,
+      margin: 3.2,
+      ccfUndrawn: 40,
+      riskWeight: 150,
+      repaymentPriority: 1,
+    },
+    {
+      id: 2,
+      name: "הלוואת בניה בכירה",
+      productType: "seniorConstruction",
+      amount: 210000,
+      margin: 3.2,
+      ccfUndrawn: 40,
+      riskWeight: 150,
+      repaymentPriority: 1,
+      drawQ1Pct: 8.33,
+      drawQ2Pct: 8.33,
+      drawQ3Pct: 8.33,
+      drawQ4Pct: 8.33,
+      drawQ5Pct: 8.33,
+      drawQ6Pct: 8.33,
+      drawQ7Pct: 8.33,
+      drawQ8Pct: 8.33,
+      drawQ9Pct: 8.33,
+      drawQ10Pct: 8.33,
+      drawQ11Pct: 8.33,
+      drawQ12Pct: 8.37,
+    },
+    {
+      id: 3,
+      name: "הלוואת מזנין",
+      productType: "mezzanineLoan",
+      amount: 0,
+      margin: 7.5,
+      ccfUndrawn: 40,
+      riskWeight: 200,
+      repaymentPriority: 2,
+      drawQ1Pct: 0,
+      drawQ2Pct: 0,
+      drawQ3Pct: 0,
+      drawQ4Pct: 0,
+      drawQ5Pct: 0,
+      drawQ6Pct: 0,
+      drawQ7Pct: 0,
+      drawQ8Pct: 0,
+      drawQ9Pct: 0,
+      drawQ10Pct: 0,
+      drawQ11Pct: 0,
+      drawQ12Pct: 0,
+    },
+  ]);
   const [isSecuritiesModalOpen, setIsSecuritiesModalOpen] = useState(false);
   const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
   const [isAccountLookupModalOpen, setIsAccountLookupModalOpen] = useState(false);
@@ -357,6 +417,9 @@ export default function RwaReturnSimulator() {
     constructionSaleLawGuaranteeCcf,
     constructionGuaranteeCcf,
     constructionUndrawnLoanCcf,
+    constructionSaleLawGuaranteeFinalCcf,
+    constructionSaleLawGuaranteeReductionStartPct,
+    constructionCreditProducts,
     activeTab,
     products: JSON.parse(JSON.stringify(products)),
     securities: JSON.parse(JSON.stringify(securities)),
@@ -427,6 +490,9 @@ export default function RwaReturnSimulator() {
     setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 50);
     setConstructionGuaranteeCcf(snapshot.constructionGuaranteeCcf ?? 50);
     setConstructionUndrawnLoanCcf(snapshot.constructionUndrawnLoanCcf ?? 40);
+    setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 20);
+    setConstructionSaleLawGuaranteeReductionStartPct(snapshot.constructionSaleLawGuaranteeReductionStartPct ?? 80);
+    setConstructionCreditProducts(snapshot.constructionCreditProducts || []);
     setActiveTab(snapshot.activeTab);
     setProducts(snapshot.products || []);
     setSecurities(snapshot.securities || []);
@@ -744,6 +810,9 @@ export default function RwaReturnSimulator() {
         saleLawGuaranteeCcf: constructionSaleLawGuaranteeCcf,
         guaranteeCcf: constructionGuaranteeCcf,
         undrawnLoanCcf: constructionUndrawnLoanCcf,
+        saleLawGuaranteeFinalCcf: constructionSaleLawGuaranteeFinalCcf,
+        saleLawGuaranteeReductionStartPct: constructionSaleLawGuaranteeReductionStartPct,
+        creditProducts: constructionCreditProducts,
       }),
     [
       constructionLandMonths,
@@ -765,6 +834,9 @@ export default function RwaReturnSimulator() {
       constructionSaleLawGuaranteeCcf,
       constructionGuaranteeCcf,
       constructionUndrawnLoanCcf,
+      constructionSaleLawGuaranteeFinalCcf,
+      constructionSaleLawGuaranteeReductionStartPct,
+      constructionCreditProducts,
     ]
   );
 
@@ -1046,6 +1118,11 @@ export default function RwaReturnSimulator() {
             setGuaranteeCcf={setConstructionGuaranteeCcf}
             undrawnLoanCcf={constructionUndrawnLoanCcf}
             setUndrawnLoanCcf={setConstructionUndrawnLoanCcf}
+            saleLawGuaranteeFinalCcf={constructionSaleLawGuaranteeFinalCcf}
+            setSaleLawGuaranteeFinalCcf={setConstructionSaleLawGuaranteeFinalCcf}
+            saleLawGuaranteeReductionStartPct={constructionSaleLawGuaranteeReductionStartPct}
+            setSaleLawGuaranteeReductionStartPct={setConstructionSaleLawGuaranteeReductionStartPct}
+            onOpenCreditProducts={() => setIsConstructionCreditModalOpen(true)}
           />
         )}
 
@@ -1614,6 +1691,19 @@ export default function RwaReturnSimulator() {
           analysis={productsAnalysis}
           onBeforeChange={saveSnapshot}
           onClose={() => setIsProductsModalOpen(false)}
+        />
+      )}
+
+      {isConstructionCreditModalOpen && (
+        <ConstructionCreditModal
+          products={constructionCreditProducts}
+          setProducts={setConstructionCreditProducts}
+          totalCost={constructionTotalCost}
+          landCost={constructionLandCost}
+          equityPct={constructionEquityPct}
+          bankSharePct={constructionBankSharePct}
+          onBeforeChange={saveSnapshot}
+          onClose={() => setIsConstructionCreditModalOpen(false)}
         />
       )}
 
