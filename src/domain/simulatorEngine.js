@@ -1521,3 +1521,165 @@ export function runCalculationTests() {
     },
   ];
 }
+
+export const CONSTRUCTION_REGULATORY_CHECKS = [
+  {
+    id: "closedAccount",
+    label: "חשבון פרויקט סגור ושעבוד תקבולים",
+    note: "ניהול כל התקבולים והתשלומים בחשבון ליווי ייעודי, עם בקרה על מקורות ושימושים ושעבוד זכויות הפרויקט לטובת הבנק.",
+  },
+  {
+    id: "voucherBook",
+    label: "שיטת שוברים לרוכשי דירות",
+    note: "תשלומי רוכשים אמורים להיכנס ישירות לחשבון הפרויקט באמצעות שוברים/מנגנון תשלום מבוקר, כדי לחבר בין תקבול לבין בטוחה לרוכש.",
+  },
+  {
+    id: "saleLawGuaranteeControl",
+    label: "בקרת ערבויות חוק מכר",
+    note: "הנפקת ערבות/בטוחה לפי חוק המכר כנגד תקבולי רוכשים, התאמת סכומים, הצמדה, ביטול ערבויות במסירת חזקה והעברת זכויות.",
+  },
+  {
+    id: "zeroReport",
+    label: "דו״ח אפס, תקציב ומפקח הנדסי",
+    note: "אישור דו״ח אפס, לוח זמנים, תקציב, מקורות הון עצמי ומנגנון שחרור כספים לפי אישורי מפקח והתקדמות ביצוע.",
+  },
+  {
+    id: "preSalesAndEquity",
+    label: "הון עצמי ומכירות מוקדמות",
+    note: "בדיקת עמידה בתנאי פתיחה, שיעור הון עצמי, קצב מכירות, מחירי מכירה בפועל ויחסי LTV/LTC/DSCR פנימיים.",
+  },
+  {
+    id: "permitsAndZoning",
+    label: "היתרים, תב״ע ורישום זכויות",
+    note: "בדיקת תוקף היתרי בנייה, זכויות בקרקע, שעבודים, הסכמי קומבינציה/תמורות, מיסוי ומגבלות רישום.",
+  },
+];
+
+export function calculateConstructionProjectForecast(input = {}) {
+  const landMonths = clampNumber(input.landMonths ?? 24, 0, 84);
+  const constructionMonths = clampNumber(input.constructionMonths ?? 36, 1, 96);
+  const totalMonths = Math.max(1, Math.round(landMonths + constructionMonths));
+  const totalCost = Math.max(0, Number(input.totalCost) || 0);
+  const landCost = Math.max(0, Number(input.landCost) || 0);
+  const expectedRevenue = Math.max(0, Number(input.expectedRevenue) || 0);
+  const equityPct = clampNumber(input.equityPct ?? 25, 0, 100);
+  const bankSharePct = clampNumber(input.bankSharePct ?? 100, 0, 100);
+  const loanMargin = Math.max(0, Number(input.loanMargin) || 0);
+  const guaranteeFeeRate = Math.max(0, Number(input.guaranteeFeeRate) || 0);
+  const saleLawGuaranteeFeeRate = Math.max(0, Number(input.saleLawGuaranteeFeeRate) || 0);
+  const accountManagementFee = Math.max(0, Number(input.accountManagementFee) || 0);
+  const setupFeePct = Math.max(0, Number(input.setupFeePct) || 0);
+  const legalAndControlFees = Math.max(0, Number(input.legalAndControlFees) || 0);
+  const landRiskWeight = Math.max(0, Number(input.landRiskWeight) || 150);
+  const constructionRiskWeight = Math.max(0, Number(input.constructionRiskWeight) || 150);
+  const saleLawGuaranteeCcf = Math.max(0, Number(input.saleLawGuaranteeCcf) || 50) / 100;
+  const guaranteeCcf = Math.max(0, Number(input.guaranteeCcf) || 50) / 100;
+  const undrawnLoanCcf = Math.max(0, Number(input.undrawnLoanCcf) || 40) / 100;
+  const completionGuaranteeLimit = Math.max(0, Number(input.completionGuaranteeLimit) || 0);
+  const equityAmount = totalCost * (equityPct / 100);
+  const totalLoanFacility = Math.max(0, totalCost - equityAmount) * (bankSharePct / 100);
+  const landLoanFacility = Math.min(totalLoanFacility, Math.max(0, landCost - Math.min(equityAmount, landCost)) * (bankSharePct / 100));
+  const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility);
+  const saleLawGuaranteeFacility = expectedRevenue * (bankSharePct / 100);
+  const setupFee = totalLoanFacility * (setupFeePct / 100);
+  const monthlyAccountFee = accountManagementFee / 12;
+  const monthlyControlFee = legalAndControlFees / 12;
+  const constructionCost = Math.max(0, totalCost - landCost);
+  const monthlyConstructionDraw = constructionMonths > 0 ? constructionCost / constructionMonths : 0;
+  const monthlySalesRevenue = constructionMonths > 0 ? expectedRevenue / constructionMonths : 0;
+
+  let loanOutstanding = 0;
+  let cumulativeSales = 0;
+  const rows = Array.from({ length: totalMonths }, (_, index) => {
+    const month = index + 1;
+    const isLand = month <= landMonths;
+    const constructionMonth = Math.max(0, month - landMonths);
+    const stage = isLand ? "קרקע" : "בניה";
+    const openingLoan = loanOutstanding;
+    const loanDraw = isLand
+      ? month === 1 ? landLoanFacility : 0
+      : Math.min(constructionLoanFacility, monthlyConstructionDraw * (bankSharePct / 100));
+    const salesInflow = isLand ? 0 : monthlySalesRevenue;
+    cumulativeSales = Math.min(expectedRevenue, cumulativeSales + salesInflow);
+    const mandatorySweep = isLand ? 0 : salesInflow * (bankSharePct / 100);
+    const beforeRepayment = Math.min(totalLoanFacility, openingLoan + loanDraw);
+    const loanRepayment = Math.min(beforeRepayment, mandatorySweep);
+    loanOutstanding = Math.max(0, beforeRepayment - loanRepayment);
+    const avgLoan = (openingLoan + loanOutstanding) / 2;
+    const undrawnLoan = Math.max(0, totalLoanFacility - loanOutstanding);
+    const saleLawGuaranteeOutstanding = Math.min(saleLawGuaranteeFacility, cumulativeSales * (bankSharePct / 100));
+    const completionGuaranteeOutstanding = isLand ? 0 : completionGuaranteeLimit * (bankSharePct / 100);
+    const ead = avgLoan + undrawnLoan * undrawnLoanCcf + saleLawGuaranteeOutstanding * saleLawGuaranteeCcf + completionGuaranteeOutstanding * guaranteeCcf;
+    const riskWeight = isLand ? landRiskWeight : constructionRiskWeight;
+    const rwa = ead * (riskWeight / 100);
+    const interestIncome = avgLoan * (loanMargin / 100) / 12;
+    const guaranteeIncome = completionGuaranteeOutstanding * (guaranteeFeeRate / 100) / 12;
+    const saleLawGuaranteeIncome = saleLawGuaranteeOutstanding * (saleLawGuaranteeFeeRate / 100) / 12;
+    const feeIncome = guaranteeIncome + saleLawGuaranteeIncome + monthlyAccountFee + monthlyControlFee + (month === 1 ? setupFee : 0);
+    const totalIncome = interestIncome + feeIncome;
+
+    return {
+      month,
+      label: `חודש ${month}`,
+      stage,
+      loanDraw,
+      salesInflow,
+      cumulativeSales,
+      loanRepayment,
+      loanOutstanding,
+      avgLoan,
+      undrawnLoan,
+      saleLawGuaranteeOutstanding,
+      completionGuaranteeOutstanding,
+      ead,
+      riskWeight,
+      rwa,
+      interestIncome,
+      guaranteeIncome,
+      saleLawGuaranteeIncome,
+      feeIncome,
+      totalIncome,
+      returnOnRwa: rwa > 0 ? (totalIncome * 12 / rwa) * 100 : 0,
+      salesPct: expectedRevenue > 0 ? (cumulativeSales / expectedRevenue) * 100 : 0,
+    };
+  });
+
+  const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
+  const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / rows.length;
+  const averageAnnualIncome = totalIncome / (rows.length / 12);
+  const peakLoanOutstanding = rows.reduce((max, row) => Math.max(max, row.loanOutstanding), 0);
+  const peakSaleLawGuarantees = rows.reduce((max, row) => Math.max(max, row.saleLawGuaranteeOutstanding), 0);
+  const peakEad = rows.reduce((max, row) => Math.max(max, row.ead), 0);
+  const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
+  const grossProfit = expectedRevenue - totalCost;
+  const grossMarginPct = expectedRevenue > 0 ? (grossProfit / expectedRevenue) * 100 : 0;
+
+  return {
+    rows,
+    landMonths,
+    constructionMonths,
+    totalMonths,
+    totalCost,
+    landCost,
+    expectedRevenue,
+    grossProfit,
+    grossMarginPct,
+    equityPct,
+    equityAmount,
+    bankSharePct,
+    totalLoanFacility,
+    landLoanFacility,
+    constructionLoanFacility,
+    saleLawGuaranteeFacility,
+    completionGuaranteeLimit: completionGuaranteeLimit * (bankSharePct / 100),
+    totalIncome,
+    averageAnnualIncome,
+    averageRwa,
+    averageReturnOnRwa: averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0,
+    peakLoanOutstanding,
+    peakSaleLawGuarantees,
+    peakEad,
+    peakRwa,
+    regulatoryChecks: CONSTRUCTION_REGULATORY_CHECKS,
+  };
+}
