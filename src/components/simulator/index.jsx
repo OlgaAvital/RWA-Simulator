@@ -27,8 +27,11 @@ import {
   RATING_RULES,
   REAL_ESTATE_EXPOSURE_RULES,
   SECURITY_RULES,
+  CONSTRUCTION_COLLATERAL_TYPES,
   CONSTRUCTION_CREDIT_PRODUCT_TYPES,
   CONSTRUCTION_DRAWDOWN_FIELDS,
+  CONSTRUCTION_INSURANCE_TYPES,
+  CONSTRUCTION_INSURER_RATING_RULES,
   CONSTRUCTION_REGULATORY_CHECKS,
   calculateInfrastructureFees,
   createDefaultConstructionCreditProducts,
@@ -487,6 +490,9 @@ export function ConstructionPrintPreviewModal({ clientName, dealName, forecast, 
                 <PrintRow label="מסגרת בניה" value={formatM(forecast.constructionLoanFacility)} />
                 <PrintRow label="שיא EAD" value={formatM(forecast.peakEad)} />
                 <PrintRow label="RWA ממוצע" value={formatM(forecast.averageRwa)} />
+                <PrintRow label="בטוחות כשירות" value={formatM(forecast.collateralAnalysis?.totalEligibleAmount || 0)} />
+                <PrintRow label="סכום מבוטח" value={formatM(forecast.insuranceAnalysis?.totalInsuredAmount || 0)} />
+                <PrintRow label="הוצאות ביטוח" value={formatM(forecast.totalInsuranceExpense || 0, 2)} />
               </div>
               <div className="rounded-2xl border border-slate-200 p-4">
                 <h2 className="mb-3 text-xl font-bold text-slate-900">בקרות ליווי פיננסי</h2>
@@ -2148,6 +2154,168 @@ export function DefinitionsPanel() {
 }
 
 
+
+export function ConstructionCollateralModal({ collaterals, setCollaterals, insurances, setInsurances, onBeforeChange, onClose }) {
+  const updateCollateral = (id, field, value) => {
+    onBeforeChange?.();
+    setCollaterals((rows) => (rows || []).map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+  };
+  const addCollateral = (collateralType = "landMortgage") => {
+    onBeforeChange?.();
+    const rule = CONSTRUCTION_COLLATERAL_TYPES[collateralType] || CONSTRUCTION_COLLATERAL_TYPES.landMortgage;
+    setCollaterals((rows) => [
+      ...(rows || []),
+      { id: Date.now(), name: rule.label, collateralType, amount: 0, haircutPct: rule.defaultHaircut, eligible: rule.defaultEligible },
+    ]);
+  };
+  const removeCollateral = (id) => {
+    onBeforeChange?.();
+    setCollaterals((rows) => (rows || []).filter((row) => row.id !== id));
+  };
+  const updateInsurance = (id, field, value) => {
+    onBeforeChange?.();
+    setInsurances((rows) => (rows || []).map((row) => {
+      if (row.id !== id) return row;
+      const next = { ...row, [field]: value };
+      const insuredAmount = Math.max(0, Number(field === "insuredAmount" ? value : next.insuredAmount) || 0);
+      if (field === "paymentPct" || (field === "insuredAmount" && next.paymentMode !== "amount")) {
+        next.paymentMode = "pct";
+        next.paymentAmount = insuredAmount * ((Number(next.paymentPct) || 0) / 100);
+      }
+      if (field === "paymentAmount" || (field === "insuredAmount" && next.paymentMode === "amount")) {
+        next.paymentMode = "amount";
+        next.paymentPct = insuredAmount > 0 ? ((Number(next.paymentAmount) || 0) / insuredAmount) * 100 : 0;
+      }
+      return next;
+    }));
+  };
+  const addInsurance = (insuranceType = "guaranteeInsurance") => {
+    onBeforeChange?.();
+    const rule = CONSTRUCTION_INSURANCE_TYPES[insuranceType] || CONSTRUCTION_INSURANCE_TYPES.guaranteeInsurance;
+    setInsurances((rows) => [
+      ...(rows || []),
+      { id: Date.now(), name: rule.label, insuranceType, insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0, paymentAmount: 0 },
+    ]);
+  };
+  const removeInsurance = (id) => {
+    onBeforeChange?.();
+    setInsurances((rows) => (rows || []).filter((row) => row.id !== id));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex flex-col gap-3 border-b bg-slate-50 p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">בטוחות וביטוחים — פרויקט ליווי נדל״ן</h2>
+            <p className="mt-1 text-sm text-slate-600">הזיני בטוחות קיימות וביטוחים שהבנק רוכש ממבטחים חיצוניים. ביטוח מפחית RWA לפי דירוג המבטח, ועלות הביטוח יורדת כהוצאה מהכנסות הפרויקט.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => addCollateral("landMortgage")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ בטוחה</button>
+            <button type="button" onClick={() => addInsurance("guaranteeInsurance")} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">+ ביטוח בנק</button>
+          </div>
+        </div>
+
+        <div className="space-y-6 overflow-auto p-5">
+          <div>
+            <div className="mb-3 text-lg font-semibold">בטוחות</div>
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-slate-100 text-slate-600">
+                <tr>
+                  <th className="p-3 text-right">שם</th>
+                  <th className="p-3 text-right">סוג בטוחה</th>
+                  <th className="p-3 text-right">סכום</th>
+                  <th className="p-3 text-right">Haircut %</th>
+                  <th className="p-3 text-right">כשירה להפחתה</th>
+                  <th className="p-3 text-right">שווי כשיר</th>
+                  <th className="p-3 text-right">מחיקה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(collaterals || []).map((collateral) => {
+                  const rule = CONSTRUCTION_COLLATERAL_TYPES[collateral.collateralType] || CONSTRUCTION_COLLATERAL_TYPES.landMortgage;
+                  const eligibleValue = collateral.eligible ? (Number(collateral.amount) || 0) * (1 - (Number(collateral.haircutPct) || 0) / 100) : 0;
+                  return (
+                    <tr key={collateral.id} className="border-t">
+                      <td className="p-3"><input value={collateral.name || ""} onChange={(event) => updateCollateral(collateral.id, "name", event.target.value)} className="w-44 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                      <td className="p-3">
+                        <select value={collateral.collateralType || "landMortgage"} onChange={(event) => {
+                          const nextRule = CONSTRUCTION_COLLATERAL_TYPES[event.target.value] || rule;
+                          updateCollateral(collateral.id, "collateralType", event.target.value);
+                          updateCollateral(collateral.id, "haircutPct", nextRule.defaultHaircut);
+                          updateCollateral(collateral.id, "eligible", nextRule.defaultEligible);
+                        }} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_COLLATERAL_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                        <div className="mt-1 text-[11px] text-slate-500">{rule.note}</div>
+                      </td>
+                      <td className="p-3"><NumberCell value={collateral.amount ?? 0} onChange={(v) => updateCollateral(collateral.id, "amount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3"><NumberCell value={collateral.haircutPct ?? rule.defaultHaircut} onChange={(v) => updateCollateral(collateral.id, "haircutPct", clampNumber(v, 0, 100))} /></td>
+                      <td className="p-3"><Checkbox checked={collateral.eligible} onChange={(v) => updateCollateral(collateral.id, "eligible", v)} /></td>
+                      <td className="p-3 font-bold text-emerald-700">{formatK(eligibleValue)}</td>
+                      <td className="p-3"><button type="button" onClick={() => removeCollateral(collateral.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <div className="mb-3 text-lg font-semibold">ביטוחים שהבנק רוכש ממבטחים חיצוניים</div>
+            <table className="w-full min-w-[1200px] text-sm">
+              <thead className="bg-slate-100 text-slate-600">
+                <tr>
+                  <th className="p-3 text-right">שם</th>
+                  <th className="p-3 text-right">סוג ביטוח</th>
+                  <th className="p-3 text-right">סכום מבוטח</th>
+                  <th className="p-3 text-right">דירוג מבטח</th>
+                  <th className="p-3 text-right">RW מבטח</th>
+                  <th className="p-3 text-right">תשלום %</th>
+                  <th className="p-3 text-right">תשלום שנתי</th>
+                  <th className="p-3 text-right">מחיקה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(insurances || []).map((insurance) => {
+                  const rating = CONSTRUCTION_INSURER_RATING_RULES[insurance.insurerRating || "unrated"] || CONSTRUCTION_INSURER_RATING_RULES.unrated;
+                  return (
+                    <tr key={insurance.id} className="border-t">
+                      <td className="p-3"><input value={insurance.name || ""} onChange={(event) => updateInsurance(insurance.id, "name", event.target.value)} className="w-44 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                      <td className="p-3">
+                        <select value={insurance.insuranceType || "guaranteeInsurance"} onChange={(event) => updateInsurance(insurance.id, "insuranceType", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_INSURANCE_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-3"><NumberCell value={insurance.insuredAmount ?? 0} onChange={(v) => updateInsurance(insurance.id, "insuredAmount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3">
+                        <select value={insurance.insurerRating || "unrated"} onChange={(event) => updateInsurance(insurance.id, "insurerRating", event.target.value)} className="w-32 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_INSURER_RATING_RULES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-3 font-bold text-sky-700">{rating.riskWeight}%</td>
+                      <td className="p-3"><NumberCell value={insurance.paymentPct ?? 0} onChange={(v) => updateInsurance(insurance.id, "paymentPct", clampNumber(v, 0, 30))} /></td>
+                      <td className="p-3"><NumberCell value={insurance.paymentAmount ?? 0} onChange={(v) => updateInsurance(insurance.id, "paymentAmount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3"><button type="button" onClick={() => removeInsurance(insurance.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="mt-4 rounded-2xl bg-sky-50 p-4 text-sm leading-6 text-sky-900">
+              התשלום למבטח יכול להיות מוזן כאחוז מהסכום המבוטח או כסכום שנתי; שינוי אחד מעדכן את השני. במנוע החישוב העלות נגרעת כהוצאה חודשית מהכנסות הפרויקט, והסכום המבוטח מקבל משקל סיכון לפי דירוג המבטח.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t bg-slate-50 p-4">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800">סגור</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ConstructionCreditModal({ products, setProducts, totalCost, landCost, equityPct, bankSharePct, onBeforeChange, onClose }) {
   const updateProduct = (id, field, value) => {
     onBeforeChange?.();
@@ -2300,6 +2468,7 @@ export function ConstructionProjectPanel({
   saleLawGuaranteeReductionStartPct,
   setSaleLawGuaranteeReductionStartPct,
   onOpenCreditProducts,
+  onOpenCollaterals,
 }) {
   const [chartTab, setChartTab] = useState("credit");
   const sampledRows = forecast.rows.filter((row) => row.month === 1 || row.month % 3 === 0 || row.month === forecast.totalMonths);
@@ -2353,6 +2522,23 @@ export function ConstructionProjectPanel({
                   <ReadOnlyBox title="מסגרת חוק מכר" value={formatK(forecast.saleLawGuaranteeFacility)} tone="sky" />
                 </div>
               </div>
+              <div className="rounded-2xl bg-white p-3 md:col-span-2 xl:col-span-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-orange-900">בטוחות וביטוחי בנק</div>
+                    <div className="text-xs text-orange-800">שעבוד קרקע, ערבויות, פוליסות וביטוח חיצוני שמפחית RWA מול עלות ביטוח</div>
+                  </div>
+                  <button type="button" onClick={onOpenCollaterals} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700">
+                    הזנת בטוחות וביטוחים
+                  </button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-4">
+                  <ReadOnlyBox title="בטוחות כשירות" value={formatK(forecast.collateralAnalysis?.totalEligibleAmount || 0)} tone="green" />
+                  <ReadOnlyBox title="סכום מבוטח" value={formatK(forecast.insuranceAnalysis?.totalInsuredAmount || 0)} tone="sky" />
+                  <ReadOnlyBox title="עלות ביטוח שנתית" value={formatK(forecast.insuranceAnalysis?.totalAnnualCost || 0)} />
+                  <ReadOnlyBox title="חיסכון RWA מביטוח" value={formatK(forecast.totalInsuranceRwaSaving || 0)} tone="green" />
+                </div>
+              </div>
               <MetricInput label="ערבויות ביצוע/טיב, ₪k" value={completionGuaranteeLimit} setValue={setCompletionGuaranteeLimit} min={0} max={5000000} step={100} />
               <MetricInput label="מרווח הלוואות, %" value={loanMargin} setValue={setLoanMargin} min={0} max={20} step={0.1} />
               <MetricInput label="עמלת ערבויות, %" value={guaranteeFeeRate} setValue={setGuaranteeFeeRate} min={0} max={10} step={0.1} />
@@ -2389,6 +2575,8 @@ export function ConstructionProjectPanel({
             <SummaryBox title="שיא ערבויות חוק מכר" value={formatK(forecast.peakSaleLawGuarantees)} />
             <SummaryBox title="שיא EAD" value={formatK(forecast.peakEad)} />
             <SummaryBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
+            <SummaryBox title="חיסכון RWA בטוחות" value={formatK(forecast.totalCollateralRwaSaving)} positive />
+            <SummaryBox title="הוצאות ביטוח" value={formatK(forecast.totalInsuranceExpense)} warning={forecast.totalInsuranceExpense > 0} />
             <SummaryBox title="תשואה ממוצעת ל־RWA" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} positive />
           </div>
           <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
@@ -2470,6 +2658,7 @@ export function ConstructionProjectPanel({
                 <th className="p-3 text-right">RWA</th>
                 <th className="p-3 text-right">ריבית</th>
                 <th className="p-3 text-right">עמלות</th>
+                <th className="p-3 text-right">הוצאת ביטוח</th>
                 <th className="p-3 text-right">תשואה ל־RWA</th>
               </tr>
             </thead>
@@ -2488,6 +2677,7 @@ export function ConstructionProjectPanel({
                   <td className="p-3 font-bold text-emerald-700">{formatK(row.rwa)}</td>
                   <td className="p-3">{formatK(row.interestIncome)}</td>
                   <td className="p-3">{formatK(row.feeIncome)}</td>
+                  <td className="p-3 text-red-700">{formatK(row.insuranceExpense || 0)}</td>
                   <td className="p-3">{row.returnOnRwa.toFixed(2)}%</td>
                 </tr>
               ))}

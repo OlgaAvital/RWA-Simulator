@@ -44,6 +44,7 @@ import {
 
 import {
   AccountLookupModal,
+  ConstructionCollateralModal,
   ConstructionCreditModal,
   ConstructionProjectPanel,
   DefinitionsPanel,
@@ -229,6 +230,15 @@ export default function RwaReturnSimulator() {
   const [constructionSaleLawGuaranteeFinalCcf, setConstructionSaleLawGuaranteeFinalCcf] = useState(20);
   const [constructionSaleLawGuaranteeReductionStartPct, setConstructionSaleLawGuaranteeReductionStartPct] = useState(80);
   const [isConstructionCreditModalOpen, setIsConstructionCreditModalOpen] = useState(false);
+
+  const [isConstructionCollateralModalOpen, setIsConstructionCollateralModalOpen] = useState(false);
+  const [constructionCollaterals, setConstructionCollaterals] = useState([
+    { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 140000, haircutPct: 35, eligible: true },
+    { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 50000, haircutPct: 100, eligible: false },
+  ]);
+  const [constructionInsurances, setConstructionInsurances] = useState([
+    { id: 1, name: "ביטוח ערבויות חוק מכר", insuranceType: "guaranteeInsurance", insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0.35, paymentAmount: 0 },
+  ]);
   const [constructionCreditProducts, setConstructionCreditProducts] = useState([
     {
       id: 1,
@@ -420,6 +430,8 @@ export default function RwaReturnSimulator() {
     constructionSaleLawGuaranteeFinalCcf,
     constructionSaleLawGuaranteeReductionStartPct,
     constructionCreditProducts,
+    constructionCollaterals,
+    constructionInsurances,
     activeTab,
     products: JSON.parse(JSON.stringify(products)),
     securities: JSON.parse(JSON.stringify(securities)),
@@ -493,6 +505,8 @@ export default function RwaReturnSimulator() {
     setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 20);
     setConstructionSaleLawGuaranteeReductionStartPct(snapshot.constructionSaleLawGuaranteeReductionStartPct ?? 80);
     setConstructionCreditProducts(snapshot.constructionCreditProducts || []);
+    setConstructionCollaterals(snapshot.constructionCollaterals || []);
+    setConstructionInsurances(snapshot.constructionInsurances || []);
     setActiveTab(snapshot.activeTab);
     setProducts(snapshot.products || []);
     setSecurities(snapshot.securities || []);
@@ -813,6 +827,8 @@ export default function RwaReturnSimulator() {
         saleLawGuaranteeFinalCcf: constructionSaleLawGuaranteeFinalCcf,
         saleLawGuaranteeReductionStartPct: constructionSaleLawGuaranteeReductionStartPct,
         creditProducts: constructionCreditProducts,
+        collaterals: constructionCollaterals,
+        insurances: constructionInsurances,
       }),
     [
       constructionLandMonths,
@@ -837,6 +853,8 @@ export default function RwaReturnSimulator() {
       constructionSaleLawGuaranteeFinalCcf,
       constructionSaleLawGuaranteeReductionStartPct,
       constructionCreditProducts,
+      constructionCollaterals,
+      constructionInsurances,
     ]
   );
 
@@ -1123,6 +1141,7 @@ export default function RwaReturnSimulator() {
             saleLawGuaranteeReductionStartPct={constructionSaleLawGuaranteeReductionStartPct}
             setSaleLawGuaranteeReductionStartPct={setConstructionSaleLawGuaranteeReductionStartPct}
             onOpenCreditProducts={() => setIsConstructionCreditModalOpen(true)}
+            onOpenCollaterals={() => setIsConstructionCollateralModalOpen(true)}
           />
         )}
 
@@ -1691,6 +1710,17 @@ export default function RwaReturnSimulator() {
           analysis={productsAnalysis}
           onBeforeChange={saveSnapshot}
           onClose={() => setIsProductsModalOpen(false)}
+        />
+      )}
+
+      {isConstructionCollateralModalOpen && (
+        <ConstructionCollateralModal
+          collaterals={constructionCollaterals}
+          setCollaterals={setConstructionCollaterals}
+          insurances={constructionInsurances}
+          setInsurances={setConstructionInsurances}
+          onBeforeChange={saveSnapshot}
+          onClose={() => setIsConstructionCollateralModalOpen(false)}
         />
       )}
 
