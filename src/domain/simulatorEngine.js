@@ -1056,7 +1056,9 @@ export function calculateInfrastructureProjectForecast(input) {
     let projectTotalExposure = 0;
     let interestIncome = 0;
     let feeIncome = 0;
+    let undrawnInterestIncome = 0;
     let ead = 0;
+    const productDetails = [];
 
     products.forEach((product) => {
       const rule = INFRA_PRODUCT_TYPES[product.productType] || INFRA_PRODUCT_TYPES.infraLongTermLoan;
@@ -1113,14 +1115,39 @@ export function calculateInfrastructureProjectForecast(input) {
         : guaranteeExposure * ccf;
       const productEad = Math.min(rawProductEad, productTotalExposure);
       const rate = Math.max(0, Number(product.rate) || 0) / 100;
+      const defaultUndrawnRate = Math.max(0, Number(product.rate) || 0) / 3;
+      const defaultUndrawnCustomerRate = Math.max(0, Number(product.customerRate || product.rate) || 0) / 3;
+      const undrawnRatePct = Math.max(0, Number(product.undrawnRate ?? defaultUndrawnRate) || 0);
+      const undrawnCustomerRatePct = Math.max(0, Number(product.undrawnCustomerRate ?? defaultUndrawnCustomerRate) || 0);
+      const undrawnIncome = rule.isLoan && productUndrawn > 0 ? productUndrawn * (undrawnRatePct / 100) : 0;
       let productIncome = 0;
       if (rule.incomeMode === "interest") {
-        productIncome = averageOutstanding * rate;
+        productIncome = averageOutstanding * rate + undrawnIncome;
       } else {
         productIncome = nonLoanExposureApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
       }
 
       const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
+      productDetails.push({
+        productId: product.id,
+        productName: product.name || rule.label,
+        productType: product.productType,
+        productTypeLabel: rule.label,
+        stage: product.stage || "construction",
+        lenderType: product.lenderType || "bank",
+        isBankFunded,
+        outstanding: productOutstanding,
+        averageOutstanding: productAverageOutstanding,
+        undrawn: productUndrawn,
+        totalExposure: productTotalExposure,
+        ead: productEad,
+        income: isBankFunded ? productIncome : 0,
+        interestIncome: isBankFunded && rule.incomeMode === "interest" ? productIncome : 0,
+        feeIncome: isBankFunded && rule.incomeMode === "feeRate" ? productIncome : 0,
+        undrawnIncome: isBankFunded ? undrawnIncome : 0,
+        undrawnRatePct,
+        undrawnCustomerRatePct,
+      });
 
       projectOutstanding += productOutstanding;
       projectAverageOutstanding += productAverageOutstanding;
@@ -1135,6 +1162,7 @@ export function calculateInfrastructureProjectForecast(input) {
         yearTotalExposure += productTotalExposure;
         interestIncome += rule.incomeMode === "interest" ? productIncome : 0;
         feeIncome += rule.incomeMode === "feeRate" ? productIncome : 0;
+        undrawnInterestIncome += undrawnIncome;
         ead += productEad;
       }
     });
@@ -1190,12 +1218,14 @@ export function calculateInfrastructureProjectForecast(input) {
       commitmentIncome: 0,
       feeIncome: totalFeeIncome,
       productFeeIncome: feeIncome,
+      undrawnInterestIncome,
       projectFeeIncome,
       additionalIncome,
       totalIncome,
       discountedIncome,
       rwa,
       returnOnRwa: rwa > 0 ? (totalIncome / rwa) * 100 : 0,
+      productDetails,
     };
   });
 

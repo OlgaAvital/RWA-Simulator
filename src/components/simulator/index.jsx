@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Calculator } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -959,6 +961,8 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
         rate: 2,
         interestBase: "",
         customerRate: 0,
+        undrawnRate: 0.7,
+        undrawnCustomerRate: 0,
         feeTiming: "fullProjectAnnual",
         ccf: 100,
         ccfUndrawn: 40,
@@ -1236,6 +1240,20 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                             {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
                               <FieldBox title="CCF לא מנוצל, %">
                                 <NumberCell wide value={product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 40} onChange={(v) => updateProduct(product.id, "ccfUndrawn", clampNumber(v, 0, 100))} />
+                              </FieldBox>
+                            )}
+
+                            {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
+                              <FieldBox title="מרווח לא מנוצל, %">
+                                <NumberCell wide value={product.undrawnRate ?? (Math.max(0, Number(product.rate) || 0) / 3)} onChange={(v) => updateProduct(product.id, "undrawnRate", clampNumber(v, 0, 30))} />
+                                <div className="mt-1 text-[11px] text-slate-500">לרוב כשליש מהמרווח על החלק המנוצל.</div>
+                              </FieldBox>
+                            )}
+
+                            {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
+                              <FieldBox title="ריבית לקוח לא מנוצל, %">
+                                <NumberCell wide value={product.undrawnCustomerRate ?? (Math.max(0, Number(product.customerRate || product.rate) || 0) / 3)} onChange={(v) => updateProduct(product.id, "undrawnCustomerRate", clampNumber(v, 0, 30))} />
+                                <div className="mt-1 text-[11px] text-slate-500">נתון מחיר ללקוח; המרווח למעלה נכנס להכנסות.</div>
                               </FieldBox>
                             )}
 
@@ -1745,6 +1763,50 @@ export function InfrastructureProjectPanel({
 }) {
   const firstYear = forecast.rows[0] || {};
   const [projectChartTab, setProjectChartTab] = useState("creditRisk");
+  const [profitabilityPeriod, setProfitabilityPeriod] = useState("firstYear");
+  const productChartColors = ["#f97316", "#0ea5e9", "#22c55e", "#a855f7", "#eab308", "#ef4444", "#14b8a6", "#64748b"];
+  const profitabilityPeriodOptions = [
+    { value: "firstYear", label: "שנה ראשונה" },
+    { value: "constructionRampUpAvg", label: "ממוצע הקמה והרצה" },
+    { value: "operationAvg", label: "ממוצע תפעול" },
+  ];
+  const productChartNames = useMemo(() => {
+    const names = new Set();
+    (forecast.rows || []).forEach((row) => {
+      (row.productDetails || []).forEach((detail) => {
+        names.add(detail.productName || detail.productTypeLabel || "מוצר אשראי");
+      });
+    });
+    return Array.from(names);
+  }, [forecast.rows]);
+  const productProfitabilityData = useMemo(() => {
+    const constructionRampUpEndYear = Math.ceil(Number(constructionYears || 0) + Number(rampUpYears || 0));
+    const periodRows = (forecast.rows || []).filter((row) => {
+      if (profitabilityPeriod === "firstYear") return row.year === 1;
+      if (profitabilityPeriod === "constructionRampUpAvg") return row.year <= Math.max(1, constructionRampUpEndYear);
+      return row.year > constructionRampUpEndYear;
+    });
+    const divisor = Math.max(1, periodRows.length);
+    const totals = new Map();
+    periodRows.forEach((row) => {
+      (row.productDetails || []).forEach((detail) => {
+        if (!detail.isBankFunded) return;
+        const name = detail.productName || detail.productTypeLabel || "מוצר אשראי";
+        totals.set(name, (totals.get(name) || 0) + (Number(detail.income) || 0));
+      });
+    });
+    return Array.from(totals.entries())
+      .map(([name, income]) => ({ name, income: income / divisor }))
+      .sort((a, b) => b.income - a.income);
+  }, [constructionYears, forecast.rows, profitabilityPeriod, rampUpYears]);
+  const exposureByProductData = useMemo(() => (forecast.rows || []).map((row) => {
+    const entry = { label: row.label };
+    (row.productDetails || []).forEach((detail) => {
+      const name = detail.productName || detail.productTypeLabel || "מוצר אשראי";
+      entry[name] = (entry[name] || 0) + (Number(detail.totalExposure) || 0);
+    });
+    return entry;
+  }), [forecast.rows]);
   const handleProjectCurrencyChange = (nextCurrency) => {
     setProjectCurrency(nextCurrency);
     setProducts?.((rows) =>
@@ -1958,6 +2020,8 @@ export function InfrastructureProjectPanel({
             <TabButton active={projectChartTab === "creditRisk"} onClick={() => setProjectChartTab("creditRisk")}>אשראי ו־RWA</TabButton>
             <TabButton active={projectChartTab === "projectCredit"} onClick={() => setProjectChartTab("projectCredit")}>אשראי ומסגרות — כל הפרויקט</TabButton>
             <TabButton active={projectChartTab === "incomeReturn"} onClick={() => setProjectChartTab("incomeReturn")}>הכנסות ותשואה</TabButton>
+            <TabButton active={projectChartTab === "profitByProduct"} onClick={() => setProjectChartTab("profitByProduct")}>תרומה לרווחיות לפי מוצר</TabButton>
+            <TabButton active={projectChartTab === "exposureByProduct"} onClick={() => setProjectChartTab("exposureByProduct")}>התפלגות חשיפה לפי מוצר</TabButton>
           </div>
         </div>
 
@@ -2020,6 +2084,54 @@ export function InfrastructureProjectPanel({
                   <Line yAxisId="income" type="monotone" dataKey="discountedIncome" stroke="#64748b" strokeWidth={3} dot={false} name="הכנסות מהוונות" />
                   <Line yAxisId="return" type="monotone" dataKey="returnOnRwa" stroke="#22c55e" strokeWidth={3} dot={false} name="תשואה שנתית" />
                 </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {projectChartTab === "profitByProduct" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-semibold">תרומה לרווחיות לפי מוצר</div>
+                <div className="text-xs text-slate-500">הגרף מציג הכנסה שנתית ממוצעת/שנתית ממוצרי הבנק, כולל הכנסה על מסגרת לא מנוצלת.</div>
+              </div>
+              <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1">
+                {profitabilityPeriodOptions.map((option) => (
+                  <TabButton key={option.value} active={profitabilityPeriod === option.value} onClick={() => setProfitabilityPeriod(option.value)}>{option.label}</TabButton>
+                ))}
+              </div>
+            </div>
+            <div className="h-96 min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={productProfitabilityData} margin={{ top: 20, right: 10, left: 10, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={70} />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                  <Tooltip formatter={(value) => formatK(Number(value))} />
+                  <Legend />
+                  <Bar dataKey="income" fill="#f97316" name="תרומה להכנסה" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {projectChartTab === "exposureByProduct" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold">התפלגות החשיפה הכוללת בכל שנה לפי מוצר</div>
+            <div className="h-96 min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={exposureByProductData} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                  <Tooltip formatter={(value) => formatK(Number(value))} />
+                  <Legend />
+                  {productChartNames.map((name, index) => (
+                    <Bar key={name} dataKey={name} stackId="exposure" fill={productChartColors[index % productChartColors.length]} name={name} />
+                  ))}
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
