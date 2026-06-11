@@ -27,7 +27,14 @@ import {
   RATING_RULES,
   REAL_ESTATE_EXPOSURE_RULES,
   SECURITY_RULES,
+  CONSTRUCTION_COLLATERAL_TYPES,
+  CONSTRUCTION_CREDIT_PRODUCT_TYPES,
+  CONSTRUCTION_DRAWDOWN_FIELDS,
+  CONSTRUCTION_INSURANCE_TYPES,
+  CONSTRUCTION_INSURER_RATING_RULES,
+  CONSTRUCTION_REGULATORY_CHECKS,
   calculateInfrastructureFees,
+  createDefaultConstructionCreditProducts,
   clampNumber,
   convertIlsToInfraCurrency,
   formatInputNumber,
@@ -55,9 +62,12 @@ import {
   TabButton,
 } from "../common/index.jsx";
 
-export function PrintPreviewModal({ clientName, dealName, viewMode, result, productsAnalysis, additionalIncome, entityStatus, spRating, realEstateExposureType, infrastructureForecast, onClose }) {
+export function PrintPreviewModal({ clientName, dealName, viewMode, result, productsAnalysis, additionalIncome, entityStatus, spRating, realEstateExposureType, infrastructureForecast, constructionForecast, onClose }) {
   if (viewMode === "infrastructureProject") {
     return <InfrastructurePrintPreviewModal clientName={clientName} dealName={dealName} forecast={infrastructureForecast} onClose={onClose} />;
+  }
+  if (viewMode === "constructionProject") {
+    return <ConstructionPrintPreviewModal clientName={clientName} dealName={dealName} forecast={constructionForecast} onClose={onClose} />;
   }
 
   const returnOnRwa = result.rwaAfter > 0 ? (result.annualIncome / result.rwaAfter) * 100 : 0;
@@ -258,7 +268,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-4">
-                <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={forecast.rows} lines={[{ key: "outstanding", name: "יתרת אשראי", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
+                <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={forecast.rows} lines={[{ key: "totalExposure", name: "חשיפה כוללת", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
                 <PrintLineChart title="הכנסות ותשואה" data={forecast.rows} lines={[{ key: "totalIncome", name: "הכנסות", color: "#f97316" }, { key: "discountedIncome", name: "מהוון", color: "#64748b" }]} />
               </div>
             </div>
@@ -273,7 +283,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                     <Tooltip formatter={(value) => formatK(Number(value))} />
                     <Legend />
-                    <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת כל הפרויקט" />
+                    <Line type="monotone" dataKey="projectTotalExposure" stroke="#0ea5e9" strokeWidth={3} dot={false} name="חשיפה כוללת כל הפרויקט" />
                     <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
                     <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="יתרת הבנק" />
                   </LineChart>
@@ -289,7 +299,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
                   <tbody>
                     {forecast.rows.slice(0, 18).map((row) => (
                       <tr key={row.year} className="border-t">
-                        <td className="p-2 font-medium">{row.year}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.outstanding)}</td><td className="p-2">{formatM(row.projectOutstanding)}</td><td className="p-2 font-bold text-emerald-700">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.interestIncome, 2)}</td><td className="p-2">{formatM(row.feeIncome, 2)}</td><td className="p-2">{row.returnOnRwa.toFixed(2)}%</td>
+                        <td className="p-2 font-medium">{row.year}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.totalExposure)}</td><td className="p-2">{formatM(row.projectTotalExposure)}</td><td className="p-2 font-bold text-emerald-700">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.interestIncome, 2)}</td><td className="p-2">{formatM(row.feeIncome, 2)}</td><td className="p-2">{row.returnOnRwa.toFixed(2)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -436,6 +446,84 @@ export function PrintRow({ label, value }) {
   );
 }
 
+export function ConstructionPrintPreviewModal({ clientName, dealName, forecast, onClose }) {
+  const sampledRows = (forecast.rows || []).filter((row) => row.month === 1 || row.month % 6 === 0 || row.month === forecast.totalMonths);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" dir="rtl">
+      <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-slate-100 shadow-2xl">
+        <div className="print-hide flex flex-col gap-3 border-b bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">פלט PDF — מודול פרויקט בניה</h2>
+            <p className="mt-1 text-sm text-slate-600">תצוגה מקדימה בגודל A4 לרוחב. אפשר להשתמש ב־Ctrl+P ולבחור Save as PDF.</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => window.print()} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">הדפס / שמור PDF</button>
+            <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200">סגור</button>
+          </div>
+        </div>
+
+        <div className="overflow-auto p-4">
+          <div className="mx-auto w-[1123px] min-h-[794px] rounded-2xl bg-white p-6 shadow-lg print:shadow-none">
+            <div className="rounded-3xl bg-gradient-to-l from-slate-900 to-orange-700 p-6 text-white">
+              <div className="text-sm text-orange-100">מודול פרויקטי בניה</div>
+              <h1 className="mt-1 text-3xl font-bold">פלט פרויקט בניה — ליווי סגור וחוק מכר</h1>
+              <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                <span className="rounded-full bg-white/10 px-3 py-1">לקוח: {clientName || "לא הוזן"}</span>
+                <span className="rounded-full bg-white/10 px-3 py-1">פרויקט: {dealName || "לא הוזן"}</span>
+              </div>
+              <div className="mt-5 grid grid-cols-5 gap-3 text-center">
+                <PrintKpi title="עלות פרויקט" value={formatM(forecast.totalCost)} />
+                <PrintKpi title="תמורות צפויות" value={formatM(forecast.expectedRevenue)} />
+                <PrintKpi title="מסגרת הלוואות" value={formatM(forecast.totalLoanFacility)} />
+                <PrintKpi title="שיא חוק מכר" value={formatM(forecast.peakSaleLawGuarantees)} />
+                <PrintKpi title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <h2 className="mb-3 text-xl font-bold text-slate-900">תקציר אשראי ו־RWA</h2>
+                <PrintRow label="תקופת קרקע" value={`${forecast.landMonths} חודשים`} />
+                <PrintRow label="תקופת בניה" value={`${forecast.constructionMonths} חודשים`} />
+                <PrintRow label="הלוואת קרקע" value={formatM(forecast.landLoanFacility)} />
+                <PrintRow label="מסגרת בניה" value={formatM(forecast.constructionLoanFacility)} />
+                <PrintRow label="שיא EAD" value={formatM(forecast.peakEad)} />
+                <PrintRow label="RWA ממוצע" value={formatM(forecast.averageRwa)} />
+                <PrintRow label="בטוחות כשירות" value={formatM(forecast.collateralAnalysis?.totalEligibleAmount || 0)} />
+                <PrintRow label="סכום מבוטח" value={formatM(forecast.insuranceAnalysis?.totalInsuredAmount || 0)} />
+                <PrintRow label="הוצאות ביטוח" value={formatM(forecast.totalInsuranceExpense || 0, 2)} />
+              </div>
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <h2 className="mb-3 text-xl font-bold text-slate-900">בקרות ליווי פיננסי</h2>
+                {(forecast.regulatoryChecks || []).slice(0, 6).map((check) => (
+                  <PrintRow key={check.id} label={check.label} value="נדרש בתהליך" />
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+              <h2 className="mb-3 text-xl font-bold text-slate-900">תחזית חודשית מדגמית</h2>
+              <table className="w-full text-xs">
+                <thead className="bg-slate-100 text-slate-600">
+                  <tr><th className="p-2 text-right">חודש</th><th className="p-2 text-right">שלב</th><th className="p-2 text-right">הלוואות</th><th className="p-2 text-right">חוק מכר</th><th className="p-2 text-right">RWA</th><th className="p-2 text-right">הכנסה</th></tr>
+                </thead>
+                <tbody>
+                  {sampledRows.map((row) => (
+                    <tr key={row.month} className="border-t">
+                      <td className="p-2">{row.month}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.loanOutstanding)}</td><td className="p-2">{formatM(row.saleLawGuaranteeOutstanding)}</td><td className="p-2">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.totalIncome, 2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AccountLookupModal({ onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
@@ -515,10 +603,13 @@ export function AccountLookupModal({ onClose }) {
   );
 }
 
-export function Header({ result, viewMode, productsAnalysis, infrastructureForecast, clientName, dealName }) {
+export function Header({ result, viewMode, productsAnalysis, infrastructureForecast, constructionForecast, clientName, dealName }) {
   const isInfrastructureProject = viewMode === "infrastructureProject";
+  const isConstructionProject = viewMode === "constructionProject";
   const returnOnRwa = isInfrastructureProject
     ? infrastructureForecast.averageReturnOnRwa
+    : isConstructionProject
+      ? constructionForecast.averageReturnOnRwa
     : viewMode === "existingPlusNew"
       ? result.totalRwaAfterNewDeal > 0
         ? (result.totalAnnualIncomeAfterNewDeal / result.totalRwaAfterNewDeal) * 100
@@ -533,7 +624,7 @@ export function Header({ result, viewMode, productsAnalysis, infrastructureForec
         <div className="mb-2 flex items-center gap-2 text-sm text-orange-200">
           <Calculator className="h-4 w-4" /> סימולטור תשואה ונכסי סיכון
         </div>
-        <h1 className="text-3xl font-bold">{isInfrastructureProject ? "מודל פרויקט תשתית — תחזית רב־שנתית" : "בחינת עסקה / תיק עסקי לפי RWA ותשואה לנכסי סיכון"}</h1>
+        <h1 className="text-3xl font-bold">{isInfrastructureProject ? "מודל פרויקט תשתית — תחזית רב־שנתית" : isConstructionProject ? "מודל פרויקט בניה — קרקע, ליווי סגור וחוק מכר" : "בחינת עסקה / תיק עסקי לפי RWA ותשואה לנכסי סיכון"}</h1>
         <div className="mt-2 flex flex-wrap gap-2 text-sm">
           <span className="rounded-full bg-white/10 px-3 py-1 text-orange-100">לקוח: {clientName || "לא הוזן"}</span>
           <span className="rounded-full bg-white/10 px-3 py-1 text-orange-100">עסקה: {dealName || "לא הוזנה"}</span>
@@ -541,41 +632,43 @@ export function Header({ result, viewMode, productsAnalysis, infrastructureForec
         <p className="mt-2 max-w-3xl text-sm text-slate-200">
           {isInfrastructureProject
             ? "כולל סל מוצרי פרויקט, מטבעות, שחרורי כספים, לוחות סילוקין, ערבויות CRM, תחזית RWA והכנסות לאורך חיי הפרויקט."
-            : "כולל סל מוצרי עסקה חדשה, CCF נפרד למנוצל וללא מנוצל, מצב קיים, סיווג PSE / רשות מקומית, בטוחות ני״ע כשירות, ערבויות ותמחור."}
+            : isConstructionProject
+              ? "כולל שלב קרקע, שלב בניה בפרויקט סגור, מסגרת הלוואות, ערבויות ביצוע וחוק מכר, תקבולי רוכשים, RWA ותפעול ליווי פיננסי."
+              : "כולל סל מוצרי עסקה חדשה, CCF נפרד למנוצל וללא מנוצל, מצב קיים, סיווג PSE / רשות מקומית, בטוחות ני״ע כשירות, ערבויות ותמחור."}
         </p>
       </div>
       <div className="print-kpis grid grid-cols-6 gap-3 text-center md:w-[1240px]">
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "סך מוצרים" : "חבות מלאה ברוטו"}</div>
-          <div className="text-3xl font-bold text-orange-200">{formatM(isInfrastructureProject ? infrastructureForecast.totalFacility : productsAnalysis.totalLimit)}</div>
-          <div className="mt-1 text-[11px] text-slate-300">{isInfrastructureProject ? "בש״ח לאחר המרה" : "לפני CCF"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject ? "סך מוצרים" : isConstructionProject ? "מסגרת הלוואות" : "חבות מלאה ברוטו"}</div>
+          <div className="text-3xl font-bold text-orange-200">{formatM(isInfrastructureProject ? infrastructureForecast.totalFacility : isConstructionProject ? constructionForecast.totalLoanFacility : productsAnalysis.totalLimit)}</div>
+          <div className="mt-1 text-[11px] text-slate-300">{isInfrastructureProject ? "בש״ח לאחר המרה" : isConstructionProject ? "קרקע + בניה" : "לפני CCF"}</div>
         </div>
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "חשיפה מקסימלית" : "חשיפה לאחר CCF / EAD"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject ? "חשיפה מקסימלית" : isConstructionProject ? "שיא EAD" : "חשיפה לאחר CCF / EAD"}</div>
           <div className="text-3xl font-bold text-orange-200">
-            {formatM(isInfrastructureProject ? infrastructureForecast.peakExposure : viewMode === "existingPlusNew" ? result.totalEadAfterNewDeal : result.ead)}
+            {formatM(isInfrastructureProject ? infrastructureForecast.peakExposure : isConstructionProject ? constructionForecast.peakEad : viewMode === "existingPlusNew" ? result.totalEadAfterNewDeal : result.ead)}
           </div>
         </div>
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "RWA ממוצע" : viewMode === "existingPlusNew" ? "נכסי סיכון כולל" : "נכסי סיכון אחרי"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject || isConstructionProject ? "RWA ממוצע" : viewMode === "existingPlusNew" ? "נכסי סיכון כולל" : "נכסי סיכון אחרי"}</div>
           <div className="text-3xl font-bold text-orange-200">
-            {formatM(isInfrastructureProject ? infrastructureForecast.averageRwa : viewMode === "existingPlusNew" ? result.totalRwaAfterNewDeal : result.rwaAfter)}
+            {formatM(isInfrastructureProject ? infrastructureForecast.averageRwa : isConstructionProject ? constructionForecast.averageRwa : viewMode === "existingPlusNew" ? result.totalRwaAfterNewDeal : result.rwaAfter)}
           </div>
         </div>
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "הכנסה שנה ראשונה" : "הכנסות שנתיות"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject ? "הכנסה שנה ראשונה" : isConstructionProject ? "הכנסה שנתית ממוצעת" : "הכנסות שנתיות"}</div>
           <div className="text-3xl font-bold text-orange-200">
-            {formatM(isInfrastructureProject ? infrastructureForecast.rows[0]?.totalIncome || 0 : viewMode === "existingPlusNew" ? result.totalAnnualIncomeAfterNewDeal : result.annualIncome, 2)}
+            {formatM(isInfrastructureProject ? infrastructureForecast.rows[0]?.totalIncome || 0 : isConstructionProject ? constructionForecast.averageAnnualIncome : viewMode === "existingPlusNew" ? result.totalAnnualIncomeAfterNewDeal : result.annualIncome, 2)}
           </div>
         </div>
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "תשואה שנתית ממוצעת" : "תשואה לנכסי סיכון"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject || isConstructionProject ? "תשואה שנתית ממוצעת" : "תשואה לנכסי סיכון"}</div>
           <div className="text-3xl font-bold text-orange-200">{returnOnRwa.toFixed(2)}%</div>
         </div>
         <div className="rounded-2xl bg-white/10 p-4">
-          <div className="text-xs text-slate-300">{isInfrastructureProject ? "חיסכון CRM מערבויות" : viewMode === "existingPlusNew" ? "RWA עסקה חדשה" : "חיסכון RWA"}</div>
+          <div className="text-xs text-slate-300">{isInfrastructureProject ? "חיסכון CRM מערבויות" : isConstructionProject ? "שיא ערבויות חוק מכר" : viewMode === "existingPlusNew" ? "RWA עסקה חדשה" : "חיסכון RWA"}</div>
           <div className="text-3xl font-bold text-emerald-200">
-            {formatM(isInfrastructureProject ? infrastructureForecast.totalCrmSaving : viewMode === "existingPlusNew" ? result.incrementalRwa : result.rwaSaving)}
+            {formatM(isInfrastructureProject ? infrastructureForecast.totalCrmSaving : isConstructionProject ? constructionForecast.peakSaleLawGuarantees : viewMode === "existingPlusNew" ? result.incrementalRwa : result.rwaSaving)}
           </div>
         </div>
       </div>
@@ -1198,11 +1291,6 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                               value={`${INFRA_PULSE_FIELDS.reduce((sum, { field }) => sum + (Number(product[field]) || 0), 0).toFixed(1)}%`}
                               tone="orange"
                             />
-
-                            <FieldBox title="CCF לא מנוצל">
-                              <NumberCell wide value={product.ccfUndrawn ?? 40} onChange={(v) => updateProduct(product.id, "ccfUndrawn", clampNumber(v, 0, 100))} />
-                              <div className="mt-1 text-[11px] text-slate-500">מחושב על החלק שטרם הועמד בפעימות</div>
-                            </FieldBox>
                           </div>
                           <div className="mt-2 text-xs text-orange-900">
                             הלוואה בפעימות מוצגת בשלוש שורות: שורה ראשית, שורת פרטי הלוואה ושורת פעימות. בתצוגה רבעונית, 4 פעימות ראשונות מרוכזות בשנה הראשונה ו־4 נוספות בשנה השנייה; בתצוגה שנתית, הפעימות נפרסות על שנים 1–8.
@@ -1278,13 +1366,13 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
 
   const addFee = () => {
     setFees((rows) => [
-      { id: Date.now(), feeType: "constructionAnnual", amountMode: "pct", pct: 0, amount: 0, spreadYears: 1 },
+      { id: Date.now(), label: "עמלת פרויקט", timing: "constructionAnnual", amountMode: "pct", pct: 0, amount: 0, spreadYears: 1 },
       ...(rows || []),
     ]);
   };
 
   const removeFee = (id) => setFees((rows) => (rows || []).filter((row) => row.id !== id));
-  const analysis = calculateInfrastructureFees(fees, feeBaseAmount, 99, 0, 99);
+  const analysis = calculateInfrastructureFees(fees, feeBaseAmount, 99, 1, 99);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
@@ -1293,7 +1381,7 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
           <div>
             <h2 className="text-2xl font-bold">עמלות פרויקט ועסקה</h2>
             <p className="mt-1 text-sm text-slate-600">
-              עמלת ארגון נגבית בתחילת העסקה, עמלות UP FRONT נפרסות לשנים, ועמלות פרויקט נגבות בכל שנה בתקופת ההקמה או ההפעלה.
+              לכל עמלה ניתן להזין שם חופשי, סכום או אחוז מחלק הבנק, ומועד גבייה: חד־פעמי בתחילת הפרויקט, שנתי לאורך חיי הפרויקט, שנתי בתקופת ההקמה או שנתי בתקופת ההרצה.
             </p>
           </div>
           <div className="flex gap-2">
@@ -1312,43 +1400,40 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
           <table className="w-full min-w-[1120px] text-sm">
             <thead className="sticky top-0 z-10 bg-white text-slate-600 shadow-sm">
               <tr>
-                <th className="p-2 text-right">סוג עמלה</th>
+                <th className="p-2 text-right">שם עמלה</th>
                 <th className="p-2 text-right">אחוז מחלק הבנק</th>
                 <th className="p-2 text-right">סכום ₪k</th>
-                <th className="p-2 text-right">פריסה בשנים</th>
                 <th className="p-2 text-right">מועד גבייה</th>
                 <th className="p-2 text-right">מחיקה</th>
               </tr>
             </thead>
             <tbody>
               {(fees || []).map((fee) => {
-                const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
+                const fallbackConfig = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
                 const amountMode = fee.amountMode || (Number(fee.amount) > 0 ? "amount" : "pct");
                 const resolvedAmount = amountMode === "pct" ? feeBaseAmount * ((Number(fee.pct) || 0) / 100) : Math.max(0, Number(fee.amount) || 0);
                 const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : Number(fee.pct) || 0;
+                const normalizedTiming = fee.timing || (fallbackConfig.timing === "year1" ? "oneTimeFirstYear" : fallbackConfig.timing === "construction" ? "constructionAnnual" : fallbackConfig.timing === "operation" ? "fullProjectAnnual" : "oneTimeFirstYear");
                 return (
                   <tr key={fee.id} className="border-b align-top">
                     <td className="p-2">
-                      <select value={fee.feeType} onChange={(event) => updateFee(fee.id, "feeType", event.target.value)} className="w-56 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
-                        {Object.entries(INFRA_FEE_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
+                      <input
+                        value={fee.label || fee.name || fallbackConfig.label}
+                        onChange={(event) => updateFee(fee.id, "label", event.target.value)}
+                        className="w-64 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <NumberCell value={resolvedPct} onChange={(v) => updateFee(fee.id, "pct", clampNumber(v, 0, 100))} />
+                    </td>
+                    <td className="p-2">
+                      <NumberCell value={resolvedAmount} onChange={(v) => updateFee(fee.id, "amount", clampNumber(v, 0, 10000000))} />
+                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז או סכום; השדה השני יושלם</div>
+                    </td>
+                    <td className="p-2">
+                      <select value={normalizedTiming} onChange={(event) => updateFee(fee.id, "timing", event.target.value)} className="w-56 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                        {Object.entries(INFRA_FEE_TIMING_OPTIONS).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}
                       </select>
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={resolvedPct} disabled={!config.allowPct} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "pct", pct: clampNumber(v, 0, 100), amount: 0 } : row))} />
-                      {!config.allowPct && <div className="mt-1 text-[11px] text-slate-400">מחושב מהסכום</div>}
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={resolvedAmount} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "amount", amount: clampNumber(v, 0, 10000000) } : row))} />
-                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז מחלק הבנק או סכום, השני יושלם</div>
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={fee.spreadYears ?? 1} disabled={config.timing !== "spread"} onChange={(v) => updateFee(fee.id, "spreadYears", clampNumber(v, 1, 35))} />
-                    </td>
-                    <td className="p-2 text-xs leading-5 text-slate-600">
-                      {config.timing === "year1" && "נגבית בתחילת העסקה"}
-                      {config.timing === "spread" && "נפרסת על פני מספר שנים"}
-                      {config.timing === "construction" && "נגבית כל שנה בתקופת ההקמה"}
-                      {config.timing === "operation" && "נגבית כל שנה בתקופת ההפעלה"}
                     </td>
                     <td className="p-2">
                       <button type="button" onClick={() => removeFee(fee.id)} className="rounded-xl bg-red-50 px-3 py-1 text-red-700 hover:bg-red-100">מחק</button>
@@ -1856,7 +1941,7 @@ export function InfrastructureProjectPanel({
             </div>
             {forecast.bankShareLimitBreaches.length > 0 && (
               <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800">
-                <b>בקרת חריגה:</b> קיימות {forecast.bankShareLimitBreaches.length} שנים שבהן החבות בפרויקט גבוהה מחלק הבנק בפרויקט. החריגה המקסימלית היא {formatK(forecast.maxBankShareExcess)}. יש להקטין סכומי מוצרים או לעדכן את חלק הבנק בסינדיקציה.
+                <b>בקרת חריגה:</b> קיימות {forecast.bankShareLimitBreaches.length} שנים שבהן החשיפה הכוללת בפרויקט גבוהה מחלק הבנק בפרויקט. החריגה המקסימלית היא {formatK(forecast.maxBankShareExcess)}. יש להקטין סכומי מוצרים או לעדכן את חלק הבנק בסינדיקציה.
               </div>
             )}
           </div>
@@ -1878,7 +1963,7 @@ export function InfrastructureProjectPanel({
 
         {projectChartTab === "creditRisk" && (
           <div className="rounded-3xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 font-semibold">אשראי, חבות ונכסי סיכון לאורך חיי הפרויקט</div>
+            <div className="mb-3 font-semibold">אשראי, מסגרות ונכסי סיכון לאורך חיי הפרויקט</div>
             <div className="h-96 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={forecast.rows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
@@ -1887,8 +1972,9 @@ export function InfrastructureProjectPanel({
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
-                  <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="יתרת אשראי" />
-                  <Line type="monotone" dataKey="averageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חבות / חשיפה ממוצעת" />
+                  <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="אשראי מנוצל בפועל" />
+                  <Line type="monotone" dataKey="undrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                  <Line type="monotone" dataKey="totalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת" />
                   <Line type="monotone" dataKey="rwa" stroke="#22c55e" strokeWidth={3} dot={false} name="נכסי סיכון" />
                   <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק בפרויקט" />
                 </LineChart>
@@ -1908,9 +1994,9 @@ export function InfrastructureProjectPanel({
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
-                  <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת אשראי כל הפרויקט" />
-                  <Line type="monotone" dataKey="projectAverageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה ממוצעת כל הפרויקט" />
+                  <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="אשראי מנוצל כל הפרויקט" />
                   <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                  <Line type="monotone" dataKey="projectTotalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת כל הפרויקט" />
                   <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק" />
                 </LineChart>
               </ResponsiveContainer>
@@ -1949,9 +2035,9 @@ export function InfrastructureProjectPanel({
                 <th className="p-3 text-right">שנה</th>
                 <th className="p-3 text-right">שלב</th>
                 <th className="p-3 text-right">שחרור כספים</th>
-                <th className="p-3 text-right">יתרת אשראי</th>
-                <th className="p-3 text-right">חבות/חשיפה ממוצעת</th>
-                <th className="p-3 text-right">לא מנוצל</th>
+                <th className="p-3 text-right">אשראי מנוצל</th>
+                <th className="p-3 text-right">מסגרות לא מנוצלות</th>
+                <th className="p-3 text-right">חשיפה כוללת</th>
                 <th className="p-3 text-right">חלק הבנק</th>
                 <th className="p-3 text-right">חריגה</th>
                 <th className="p-3 text-right">RWA</th>
@@ -1969,8 +2055,8 @@ export function InfrastructureProjectPanel({
                   <td className="p-3">{row.stage}</td>
                   <td className="p-3">{formatK(row.drawdown)}</td>
                   <td className="p-3 font-medium">{formatK(row.outstanding)}</td>
-                  <td className="p-3">{formatK(row.averageOutstanding)}</td>
                   <td className="p-3">{formatK(row.undrawn)}</td>
+                  <td className="p-3 font-bold text-slate-700">{formatK(row.totalExposure)}</td>
                   <td className="p-3">{formatK(row.bankShareLimit)}</td>
                   <td className={`p-3 font-bold ${row.bankShareLimitExceeded ? "text-red-700" : "text-emerald-700"}`}>{row.bankShareLimitExceeded ? formatK(row.bankShareExcess) : "תקין"}</td>
                   <td className="p-3 font-bold text-emerald-700">{formatK(row.rwa)}</td>
@@ -2057,5 +2143,541 @@ export function DefinitionsPanel() {
         </DefinitionCard>
       </div>
     </Panel>
+  );
+}
+
+
+
+export function ConstructionCollateralModal({ collaterals, setCollaterals, insurances, setInsurances, onBeforeChange, onClose }) {
+  const updateCollateral = (id, field, value) => {
+    onBeforeChange?.();
+    setCollaterals((rows) => (rows || []).map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+  };
+  const addCollateral = (collateralType = "landMortgage") => {
+    onBeforeChange?.();
+    const rule = CONSTRUCTION_COLLATERAL_TYPES[collateralType] || CONSTRUCTION_COLLATERAL_TYPES.landMortgage;
+    setCollaterals((rows) => [
+      ...(rows || []),
+      { id: Date.now(), name: rule.label, collateralType, amount: 0, haircutPct: rule.defaultHaircut, eligible: rule.defaultEligible },
+    ]);
+  };
+  const removeCollateral = (id) => {
+    onBeforeChange?.();
+    setCollaterals((rows) => (rows || []).filter((row) => row.id !== id));
+  };
+  const updateInsurance = (id, field, value) => {
+    onBeforeChange?.();
+    setInsurances((rows) => (rows || []).map((row) => {
+      if (row.id !== id) return row;
+      const next = { ...row, [field]: value };
+      const insuredAmount = Math.max(0, Number(field === "insuredAmount" ? value : next.insuredAmount) || 0);
+      if (field === "paymentPct" || (field === "insuredAmount" && next.paymentMode !== "amount")) {
+        next.paymentMode = "pct";
+        next.paymentAmount = insuredAmount * ((Number(next.paymentPct) || 0) / 100);
+      }
+      if (field === "paymentAmount" || (field === "insuredAmount" && next.paymentMode === "amount")) {
+        next.paymentMode = "amount";
+        next.paymentPct = insuredAmount > 0 ? ((Number(next.paymentAmount) || 0) / insuredAmount) * 100 : 0;
+      }
+      return next;
+    }));
+  };
+  const addInsurance = (insuranceType = "guaranteeInsurance") => {
+    onBeforeChange?.();
+    const rule = CONSTRUCTION_INSURANCE_TYPES[insuranceType] || CONSTRUCTION_INSURANCE_TYPES.guaranteeInsurance;
+    setInsurances((rows) => [
+      ...(rows || []),
+      { id: Date.now(), name: rule.label, insuranceType, insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0, paymentAmount: 0 },
+    ]);
+  };
+  const removeInsurance = (id) => {
+    onBeforeChange?.();
+    setInsurances((rows) => (rows || []).filter((row) => row.id !== id));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex flex-col gap-3 border-b bg-slate-50 p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">בטוחות וביטוחים — פרויקט ליווי נדל״ן</h2>
+            <p className="mt-1 text-sm text-slate-600">הזיני בטוחות קיימות וביטוחים שהבנק רוכש ממבטחים חיצוניים. ביטוח מפחית RWA לפי דירוג המבטח, ועלות הביטוח יורדת כהוצאה מהכנסות הפרויקט.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => addCollateral("landMortgage")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ בטוחה</button>
+            <button type="button" onClick={() => addInsurance("guaranteeInsurance")} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">+ ביטוח בנק</button>
+          </div>
+        </div>
+
+        <div className="space-y-6 overflow-auto p-5">
+          <div>
+            <div className="mb-3 text-lg font-semibold">בטוחות</div>
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-slate-100 text-slate-600">
+                <tr>
+                  <th className="p-3 text-right">שם</th>
+                  <th className="p-3 text-right">סוג בטוחה</th>
+                  <th className="p-3 text-right">סכום</th>
+                  <th className="p-3 text-right">Haircut %</th>
+                  <th className="p-3 text-right">כשירה להפחתה</th>
+                  <th className="p-3 text-right">שווי כשיר</th>
+                  <th className="p-3 text-right">מחיקה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(collaterals || []).map((collateral) => {
+                  const rule = CONSTRUCTION_COLLATERAL_TYPES[collateral.collateralType] || CONSTRUCTION_COLLATERAL_TYPES.landMortgage;
+                  const eligibleValue = collateral.eligible ? (Number(collateral.amount) || 0) * (1 - (Number(collateral.haircutPct) || 0) / 100) : 0;
+                  return (
+                    <tr key={collateral.id} className="border-t">
+                      <td className="p-3"><input value={collateral.name || ""} onChange={(event) => updateCollateral(collateral.id, "name", event.target.value)} className="w-44 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                      <td className="p-3">
+                        <select value={collateral.collateralType || "landMortgage"} onChange={(event) => {
+                          const nextRule = CONSTRUCTION_COLLATERAL_TYPES[event.target.value] || rule;
+                          updateCollateral(collateral.id, "collateralType", event.target.value);
+                          updateCollateral(collateral.id, "haircutPct", nextRule.defaultHaircut);
+                          updateCollateral(collateral.id, "eligible", nextRule.defaultEligible);
+                        }} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_COLLATERAL_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                        <div className="mt-1 text-[11px] text-slate-500">{rule.note}</div>
+                      </td>
+                      <td className="p-3"><NumberCell value={collateral.amount ?? 0} onChange={(v) => updateCollateral(collateral.id, "amount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3"><NumberCell value={collateral.haircutPct ?? rule.defaultHaircut} onChange={(v) => updateCollateral(collateral.id, "haircutPct", clampNumber(v, 0, 100))} /></td>
+                      <td className="p-3"><Checkbox checked={collateral.eligible} onChange={(v) => updateCollateral(collateral.id, "eligible", v)} /></td>
+                      <td className="p-3 font-bold text-emerald-700">{formatK(eligibleValue)}</td>
+                      <td className="p-3"><button type="button" onClick={() => removeCollateral(collateral.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <div className="mb-3 text-lg font-semibold">ביטוחים שהבנק רוכש ממבטחים חיצוניים</div>
+            <table className="w-full min-w-[1200px] text-sm">
+              <thead className="bg-slate-100 text-slate-600">
+                <tr>
+                  <th className="p-3 text-right">שם</th>
+                  <th className="p-3 text-right">סוג ביטוח</th>
+                  <th className="p-3 text-right">סכום מבוטח</th>
+                  <th className="p-3 text-right">דירוג מבטח</th>
+                  <th className="p-3 text-right">RW מבטח</th>
+                  <th className="p-3 text-right">תשלום %</th>
+                  <th className="p-3 text-right">תשלום שנתי</th>
+                  <th className="p-3 text-right">מחיקה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(insurances || []).map((insurance) => {
+                  const rating = CONSTRUCTION_INSURER_RATING_RULES[insurance.insurerRating || "unrated"] || CONSTRUCTION_INSURER_RATING_RULES.unrated;
+                  return (
+                    <tr key={insurance.id} className="border-t">
+                      <td className="p-3"><input value={insurance.name || ""} onChange={(event) => updateInsurance(insurance.id, "name", event.target.value)} className="w-44 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                      <td className="p-3">
+                        <select value={insurance.insuranceType || "guaranteeInsurance"} onChange={(event) => updateInsurance(insurance.id, "insuranceType", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_INSURANCE_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-3"><NumberCell value={insurance.insuredAmount ?? 0} onChange={(v) => updateInsurance(insurance.id, "insuredAmount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3">
+                        <select value={insurance.insurerRating || "unrated"} onChange={(event) => updateInsurance(insurance.id, "insurerRating", event.target.value)} className="w-32 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_INSURER_RATING_RULES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="p-3 font-bold text-sky-700">{rating.riskWeight}%</td>
+                      <td className="p-3"><NumberCell value={insurance.paymentPct ?? 0} onChange={(v) => updateInsurance(insurance.id, "paymentPct", clampNumber(v, 0, 30))} /></td>
+                      <td className="p-3"><NumberCell value={insurance.paymentAmount ?? 0} onChange={(v) => updateInsurance(insurance.id, "paymentAmount", clampNumber(v, 0, 10000000))} /></td>
+                      <td className="p-3"><button type="button" onClick={() => removeInsurance(insurance.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="mt-4 rounded-2xl bg-sky-50 p-4 text-sm leading-6 text-sky-900">
+              התשלום למבטח יכול להיות מוזן כאחוז מהסכום המבוטח או כסכום שנתי; שינוי אחד מעדכן את השני. במנוע החישוב העלות נגרעת כהוצאה חודשית מהכנסות הפרויקט, והסכום המבוטח מקבל משקל סיכון לפי דירוג המבטח.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t bg-slate-50 p-4">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800">סגור</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ConstructionCreditModal({ products, setProducts, totalCost, landCost, equityPct, bankSharePct, onBeforeChange, onClose }) {
+  const updateProduct = (id, field, value) => {
+    onBeforeChange?.();
+    setProducts((rows) => (rows || []).map((row) => (row.id === id ? { ...row, [field]: value } : row)));
+  };
+  const addProduct = (productType = "seniorConstruction") => {
+    onBeforeChange?.();
+    const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
+    setProducts((rows) => [
+      ...(rows || []),
+      {
+        id: Date.now(),
+        name: rule.label,
+        productType,
+        amount: 0,
+        margin: productType === "mezzanineLoan" ? 7.5 : 3.2,
+        ccfUndrawn: rule.defaultCcfUndrawn,
+        riskWeight: rule.defaultRiskWeight,
+        repaymentPriority: rule.isMezzanine ? 2 : 1,
+        ...Object.fromEntries(CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => [field, 0])),
+      },
+    ]);
+  };
+  const removeProduct = (id) => {
+    onBeforeChange?.();
+    setProducts((rows) => (rows || []).filter((row) => row.id !== id));
+  };
+  const resetDefault = () => {
+    onBeforeChange?.();
+    setProducts(createDefaultConstructionCreditProducts?.({ totalCost, landCost, equityPct, bankSharePct }) || []);
+  };
+  const rows = products || [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex flex-col gap-3 border-b bg-slate-50 p-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">מסגרות הלוואות וצפי שחרורים — פרויקט בניה</h2>
+            <p className="mt-1 text-sm text-slate-600">הזיני את מסגרת ההלוואות בפועל ואת פריסת השחרורים לפי רבעונים. הלוואת מזנין מוצגת בנפרד ומשפיעה על LTV לפני/אחרי מזנין.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => addProduct("seniorConstruction")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ הלוואה בכירה</button>
+            <button type="button" onClick={() => addProduct("mezzanineLoan")} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">+ מזנין</button>
+            <button type="button" onClick={resetDefault} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">ברירת מחדל</button>
+          </div>
+        </div>
+
+        <div className="overflow-auto p-5">
+          <table className="w-full min-w-[1500px] text-sm">
+            <thead className="bg-slate-100 text-slate-600">
+              <tr>
+                <th className="p-3 text-right">שם</th>
+                <th className="p-3 text-right">סוג</th>
+                <th className="p-3 text-right">מסגרת</th>
+                <th className="p-3 text-right">מרווח</th>
+                <th className="p-3 text-right">RWA %</th>
+                <th className="p-3 text-right">CCF לא מנוצל</th>
+                <th className="p-3 text-right">עדיפות פירעון</th>
+                {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
+                <th className="p-3 text-right">סה״כ שחרורים</th>
+                <th className="p-3 text-right">מחיקה</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((product) => {
+                const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
+                const isLand = rule.stage === "land";
+                const drawTotal = CONSTRUCTION_DRAWDOWN_FIELDS.reduce((sum, { field }) => sum + (Number(product[field]) || 0), 0);
+                return (
+                  <tr key={product.id} className="border-t align-top">
+                    <td className="p-3"><input value={product.name || ""} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                    <td className="p-3">
+                      <select value={product.productType || "seniorConstruction"} onChange={(event) => updateProduct(product.id, "productType", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                        {Object.entries(CONSTRUCTION_CREDIT_PRODUCT_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
+                    <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
+                    <td className="p-3"><NumberCell value={product.riskWeight ?? rule.defaultRiskWeight} onChange={(v) => updateProduct(product.id, "riskWeight", clampNumber(v, 0, 300))} /></td>
+                    <td className="p-3"><NumberCell value={product.ccfUndrawn ?? rule.defaultCcfUndrawn} onChange={(v) => updateProduct(product.id, "ccfUndrawn", clampNumber(v, 0, 100))} /></td>
+                    <td className="p-3"><NumberCell value={product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)} onChange={(v) => updateProduct(product.id, "repaymentPriority", clampNumber(v, 1, 9))} step="1" /></td>
+                    {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => (
+                      <td key={field} className="p-3">
+                        <NumberCell disabled={isLand} value={isLand ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
+                      </td>
+                    ))}
+                    <td className={`p-3 font-bold ${isLand || Math.abs(drawTotal - 100) < 0.5 || drawTotal === 0 ? "text-slate-700" : "text-amber-700"}`}>{isLand ? "מיידי" : `${drawTotal.toFixed(1)}%`}</td>
+                    <td className="p-3"><button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+            הערה: בהלוואת קרקע השחרור מתבצע במלואו בחודש הראשון. בהלוואות בניה/מזנין אחוזי השחרור נפרסים רבעונית ומחולקים ליניארית בין שלושת חודשי הרבעון. אם סך הרבעונים אינו 100%, המודל משתמש בדיוק בפריסה שהוזנה כדי לאפשר תרחישי מסגרת חלקית או עודפת.
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t bg-slate-50 p-4">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800">סגור</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ConstructionProjectPanel({
+  forecast,
+  landMonths,
+  setLandMonths,
+  constructionMonths,
+  setConstructionMonths,
+  totalCost,
+  setTotalCost,
+  landCost,
+  setLandCost,
+  expectedRevenue,
+  setExpectedRevenue,
+  equityPct,
+  setEquityPct,
+  bankSharePct,
+  setBankSharePct,
+  loanMargin,
+  setLoanMargin,
+  guaranteeFeeRate,
+  setGuaranteeFeeRate,
+  saleLawGuaranteeFeeRate,
+  setSaleLawGuaranteeFeeRate,
+  accountManagementFee,
+  setAccountManagementFee,
+  setupFeePct,
+  setSetupFeePct,
+  legalAndControlFees,
+  setLegalAndControlFees,
+  completionGuaranteeLimit,
+  setCompletionGuaranteeLimit,
+  landRiskWeight,
+  setLandRiskWeight,
+  constructionRiskWeight,
+  setConstructionRiskWeight,
+  saleLawGuaranteeCcf,
+  setSaleLawGuaranteeCcf,
+  guaranteeCcf,
+  setGuaranteeCcf,
+  undrawnLoanCcf,
+  setUndrawnLoanCcf,
+  saleLawGuaranteeFinalCcf,
+  setSaleLawGuaranteeFinalCcf,
+  saleLawGuaranteeReductionStartPct,
+  setSaleLawGuaranteeReductionStartPct,
+  onOpenCreditProducts,
+  onOpenCollaterals,
+}) {
+  const [chartTab, setChartTab] = useState("credit");
+  const sampledRows = forecast.rows.filter((row) => row.month === 1 || row.month % 3 === 0 || row.month === forecast.totalMonths);
+  const checks = forecast.regulatoryChecks || CONSTRUCTION_REGULATORY_CHECKS;
+
+  return (
+    <div className="space-y-5">
+      <Panel>
+        <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">מודל פרויקטי בניה — קרקע, ליווי סגור וחוק מכר</h2>
+            <p className="text-sm text-slate-500">
+              מודול ייעודי למימון נדל״ן יזמי בישראל: הלוואת קרקע עד 7 שנים, מעבר לשיטת פרויקט סגור, שחרור אשראי לפי התקדמות, כניסת תקבולי מכירות ועלייה מקבילה בערבויות חוק מכר.
+            </p>
+          </div>
+          <Badge tone="orange">ליווי פיננסי / פרויקט סגור</Badge>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-4">
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="mb-4 font-semibold text-slate-800">הנחות בסיס ושלבים</h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <MonthsMetricInput label="תקופת קרקע, חודשים" valueYears={landMonths / 12} setValueYears={(years) => setLandMonths(Math.round(years * 12))} minMonths={0} maxMonths={84} help="בדרך כלל הלוואה עד כניסה לבניה; המודל מגביל ל־84 חודשים." />
+              <MonthsMetricInput label="תקופת בניה, חודשים" valueYears={constructionMonths / 12} setValueYears={(years) => setConstructionMonths(Math.round(years * 12))} minMonths={1} maxMonths={96} />
+              <MetricInput label="עלות פרויקט כוללת, ₪k" value={totalCost} setValue={setTotalCost} min={0} max={10000000} step={1000} />
+              <MetricInput label="עלות קרקע, ₪k" value={landCost} setValue={setLandCost} min={0} max={10000000} step={1000} />
+              <MetricInput label="תמורות מכירה צפויות, ₪k" value={expectedRevenue} setValue={setExpectedRevenue} min={0} max={15000000} step={1000} />
+              <MetricInput label="הון עצמי יזם, %" value={equityPct} setValue={setEquityPct} min={0} max={100} step={1} />
+              <MetricInput label="חלק הבנק / קונסורציום, %" value={bankSharePct} setValue={setBankSharePct} min={0} max={100} step={1} />
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-orange-100 bg-orange-50 p-4 xl:col-span-2">
+            <h3 className="mb-4 font-semibold text-orange-900">מסגרות אשראי ועמלות</h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-2xl bg-white p-3 md:col-span-2 xl:col-span-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-orange-900">מוצרי אשראי וצפי שחרורים</div>
+                    <div className="text-xs text-orange-800">מסגרת הלוואות, הלוואת מזנין ופריסת שחרורים רבעונית</div>
+                  </div>
+                  <button type="button" onClick={onOpenCreditProducts} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-700">
+                    הזנת מסגרות ושחרורים
+                  </button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-5">
+                  <ReadOnlyBox title="מסגרת הלוואות" value={formatK(forecast.totalLoanFacility)} tone="orange" />
+                  <ReadOnlyBox title="הלוואת קרקע" value={formatK(forecast.landLoanFacility)} />
+                  <ReadOnlyBox title="בכיר לבניה" value={formatK(forecast.constructionLoanFacility)} />
+                  <ReadOnlyBox title="הלוואת מזנין" value={formatK(forecast.mezzanineFacility)} tone="sky" />
+                  <ReadOnlyBox title="מסגרת חוק מכר" value={formatK(forecast.saleLawGuaranteeFacility)} tone="sky" />
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white p-3 md:col-span-2 xl:col-span-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-orange-900">בטוחות וביטוחי בנק</div>
+                    <div className="text-xs text-orange-800">שעבוד קרקע, ערבויות, פוליסות וביטוח חיצוני שמפחית RWA מול עלות ביטוח</div>
+                  </div>
+                  <button type="button" onClick={onOpenCollaterals} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700">
+                    הזנת בטוחות וביטוחים
+                  </button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-4">
+                  <ReadOnlyBox title="בטוחות כשירות" value={formatK(forecast.collateralAnalysis?.totalEligibleAmount || 0)} tone="green" />
+                  <ReadOnlyBox title="סכום מבוטח" value={formatK(forecast.insuranceAnalysis?.totalInsuredAmount || 0)} tone="sky" />
+                  <ReadOnlyBox title="עלות ביטוח שנתית" value={formatK(forecast.insuranceAnalysis?.totalAnnualCost || 0)} />
+                  <ReadOnlyBox title="חיסכון RWA מביטוח" value={formatK(forecast.totalInsuranceRwaSaving || 0)} tone="green" />
+                </div>
+              </div>
+              <MetricInput label="ערבויות ביצוע/טיב, ₪k" value={completionGuaranteeLimit} setValue={setCompletionGuaranteeLimit} min={0} max={5000000} step={100} />
+              <MetricInput label="מרווח הלוואות, %" value={loanMargin} setValue={setLoanMargin} min={0} max={20} step={0.1} />
+              <MetricInput label="עמלת ערבויות, %" value={guaranteeFeeRate} setValue={setGuaranteeFeeRate} min={0} max={10} step={0.1} />
+              <MetricInput label="עמלת חוק מכר, %" value={saleLawGuaranteeFeeRate} setValue={setSaleLawGuaranteeFeeRate} min={0} max={10} step={0.1} />
+              <MetricInput label="עמלת הקמה, % מהמסגרת" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
+              <MetricInput label="ניהול חשבון שנתי, ₪k" value={accountManagementFee} setValue={setAccountManagementFee} min={0} max={50000} step={10} />
+              <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-4 font-semibold text-slate-800">RWA ו־CCF</h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+              <MetricInput label="משקל סיכון קרקע, %" value={landRiskWeight} setValue={setLandRiskWeight} min={0} max={250} step={5} />
+              <MetricInput label="משקל סיכון בניה, %" value={constructionRiskWeight} setValue={setConstructionRiskWeight} min={0} max={250} step={5} />
+              <MetricInput label="CCF חוק מכר בתחילת מכירות, %" value={saleLawGuaranteeCcf} setValue={setSaleLawGuaranteeCcf} min={0} max={100} step={5} />
+              <MetricInput label="CCF חוק מכר בסוף פרויקט, %" value={saleLawGuaranteeFinalCcf} setValue={setSaleLawGuaranteeFinalCcf} min={0} max={100} step={5} help="נתון פרמטרי עד לאישור המספר המדויק; המודל מפחית את ה־CCF בהדרגה לקראת סוף הפרויקט." />
+              <MetricInput label="תחילת הפחתת CCF חוק מכר, % מכירות" value={saleLawGuaranteeReductionStartPct} setValue={setSaleLawGuaranteeReductionStartPct} min={0} max={100} step={5} />
+              <MetricInput label="CCF ערבויות אחרות, %" value={guaranteeCcf} setValue={setGuaranteeCcf} min={0} max={100} step={5} />
+              <MetricInput label="CCF מסגרת לא מנוצלת, %" value={undrawnLoanCcf} setValue={setUndrawnLoanCcf} min={0} max={100} step={5} />
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-5">
+        <Panel className="xl:col-span-2">
+          <div className="mb-4 text-lg font-semibold">תוצאות מרכזיות</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <SummaryBox title="רווח יזמי גולמי" value={`${formatK(forecast.grossProfit)} (${forecast.grossMarginPct.toFixed(1)}%)`} positive={forecast.grossProfit >= 0} />
+            <SummaryBox title="שיא ניצול הלוואות" value={formatK(forecast.peakLoanOutstanding)} />
+            <SummaryBox title="LTV לפני מזנין" value={`${forecast.ltvBeforeMezzanine.toFixed(1)}%`} />
+            <SummaryBox title="LTV אחרי מזנין" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} warning={forecast.ltvAfterMezzanine > forecast.ltvBeforeMezzanine} />
+            <SummaryBox title="שיא ערבויות חוק מכר" value={formatK(forecast.peakSaleLawGuarantees)} />
+            <SummaryBox title="שיא EAD" value={formatK(forecast.peakEad)} />
+            <SummaryBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
+            <SummaryBox title="חיסכון RWA בטוחות" value={formatK(forecast.totalCollateralRwaSaving)} positive />
+            <SummaryBox title="הוצאות ביטוח" value={formatK(forecast.totalInsuranceExpense)} warning={forecast.totalInsuranceExpense > 0} />
+            <SummaryBox title="תשואה ממוצעת ל־RWA" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} positive />
+          </div>
+          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+            בתקופת הקרקע המודל מציג הלוואת קרקע גישורית. בתקופת הבניה ההלוואה נמשכת חודשית לפי עלויות, תקבולי המכירה משמשים להקטנת ניצול, וערבויות חוק מכר גדלות ביחס לקצב המכירות.
+          </div>
+        </Panel>
+
+        <Panel className="xl:col-span-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-semibold">גרף התפתחות הפרויקט</div>
+              <div className="text-sm text-slate-500">הלוואות יורדות עם מכירות; ערבויות חוק מכר עולות עם שיעור מכירה.</div>
+            </div>
+            <div className="flex gap-2 rounded-2xl bg-slate-100 p-1">
+              <TabButton active={chartTab === "credit"} onClick={() => setChartTab("credit")}>חשיפה</TabButton>
+              <TabButton active={chartTab === "income"} onClick={() => setChartTab("income")}>הכנסות</TabButton>
+            </div>
+          </div>
+          <div className="h-80 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={sampledRows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                <Tooltip formatter={(value) => formatK(Number(value))} />
+                <Legend />
+                {chartTab === "credit" ? (
+                  <>
+                    <Line type="monotone" dataKey="loanOutstanding" stroke="#f97316" strokeWidth={3} dot={false} name="ניצול הלוואות" />
+                    <Line type="monotone" dataKey="saleLawGuaranteeOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="ערבויות חוק מכר" />
+                    <Line type="monotone" dataKey="rwa" stroke="#22c55e" strokeWidth={3} dot={false} name="RWA" />
+                  </>
+                ) : (
+                  <>
+                    <Line type="monotone" dataKey="interestIncome" stroke="#f97316" strokeWidth={3} dot={false} name="ריבית חודשית" />
+                    <Line type="monotone" dataKey="feeIncome" stroke="#64748b" strokeWidth={3} dot={false} name="עמלות חודשיות" />
+                    <Line type="monotone" dataKey="totalIncome" stroke="#22c55e" strokeWidth={3} dot={false} name="סה״כ הכנסה" />
+                  </>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+      </div>
+
+      <Panel>
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-lg font-semibold">תפעול ובקרות רגולטוריות מרכזיות</div>
+            <div className="text-sm text-slate-500">צ׳קליסט עסקי למודל; אינו מחליף בדיקה משפטית/ציות, הוראות בנק ישראל ונוהלי הבנק.</div>
+          </div>
+          <Badge tone="blue">חוק מכר, שוברים וליווי פיננסי</Badge>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {checks.map((check) => (
+            <div key={check.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="font-semibold text-slate-800">{check.label}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">{check.note}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel>
+        <div className="mb-3 text-lg font-semibold">טבלת תחזית חודשית</div>
+        <div className="overflow-auto rounded-2xl border bg-white">
+          <table className="w-full min-w-[1300px] text-sm">
+            <thead className="bg-slate-100 text-slate-600">
+              <tr>
+                <th className="p-3 text-right">חודש</th>
+                <th className="p-3 text-right">שלב</th>
+                <th className="p-3 text-right">משיכת הלוואה</th>
+                <th className="p-3 text-right">תקבולי מכירות</th>
+                <th className="p-3 text-right">פירעון מהתקבולים</th>
+                <th className="p-3 text-right">יתרת הלוואות</th>
+                <th className="p-3 text-right">ערבויות חוק מכר</th>
+                <th className="p-3 text-right">CCF חוק מכר</th>
+                <th className="p-3 text-right">EAD</th>
+                <th className="p-3 text-right">RWA</th>
+                <th className="p-3 text-right">ריבית</th>
+                <th className="p-3 text-right">עמלות</th>
+                <th className="p-3 text-right">הוצאת ביטוח</th>
+                <th className="p-3 text-right">תשואה ל־RWA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sampledRows.map((row) => (
+                <tr key={row.month} className="border-t">
+                  <td className="p-3 font-medium">{row.month}</td>
+                  <td className="p-3">{row.stage}</td>
+                  <td className="p-3">{formatK(row.loanDraw)}</td>
+                  <td className="p-3">{formatK(row.salesInflow)}</td>
+                  <td className="p-3">{formatK(row.loanRepayment)}</td>
+                  <td className="p-3 font-medium text-orange-700">{formatK(row.loanOutstanding)}</td>
+                  <td className="p-3 font-medium text-sky-700">{formatK(row.saleLawGuaranteeOutstanding)}</td>
+                  <td className="p-3">{row.effectiveSaleLawGuaranteeCcf.toFixed(1)}%</td>
+                  <td className="p-3">{formatK(row.ead)}</td>
+                  <td className="p-3 font-bold text-emerald-700">{formatK(row.rwa)}</td>
+                  <td className="p-3">{formatK(row.interestIncome)}</td>
+                  <td className="p-3">{formatK(row.feeIncome)}</td>
+                  <td className="p-3 text-red-700">{formatK(row.insuranceExpense || 0)}</td>
+                  <td className="p-3">{row.returnOnRwa.toFixed(2)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
   );
 }

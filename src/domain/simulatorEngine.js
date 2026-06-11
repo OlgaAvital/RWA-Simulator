@@ -203,9 +203,10 @@ export const INFRA_PRODUCT_STAGES = {
 };
 
 export const INFRA_FEE_TIMING_OPTIONS = {
-  oneTimeFirstYear: { label: "חד פעמית בשנה הראשונה" },
+  oneTimeFirstYear: { label: "חד פעמית בתחילת הפרויקט" },
   fullProjectAnnual: { label: "שנתית לאורך חיי הפרויקט" },
   constructionAnnual: { label: "שנתית בתקופת ההקמה" },
+  rampUpAnnual: { label: "שנתית בתקופת ההרצה" },
 };
 
 export const INFRA_PULSE_FIELDS = Array.from({ length: 8 }, (_, index) => ({
@@ -954,6 +955,15 @@ export function getInfraGuaranteeFacilityPct(product, year, constructionYears = 
 }
 
 export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYears, rampUpYears, projectYears) {
+  const normalizeFeeTiming = (fee, config) => {
+    const timing = fee.timing || config.timing || "oneTimeFirstYear";
+    if (timing === "year1") return "oneTimeFirstYear";
+    if (timing === "construction") return "constructionAnnual";
+    if (timing === "operation") return "fullProjectAnnual";
+    if (timing === "spread") return "oneTimeFirstYear";
+    return timing;
+  };
+
   const rows = (fees || []).map((fee) => {
     const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
     const rawAmount = Math.max(0, Number(fee.amount) || 0);
@@ -962,11 +972,12 @@ export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYea
     const resolvedAmount = amountMode === "pct" ? feeBaseAmount * (rawPct / 100) : rawAmount;
     const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : rawPct;
     const spreadYears = Math.max(1, Math.round(Number(fee.spreadYears) || 1));
+    const timing = normalizeFeeTiming(fee, config);
 
     return {
       ...fee,
-      label: config.label,
-      timing: config.timing,
+      label: fee.label || fee.name || config.label,
+      timing,
       amountMode,
       amount: resolvedAmount,
       pct: resolvedPct,
@@ -977,10 +988,11 @@ export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYea
   const incomeByYear = Array.from({ length: projectYears }, (_, index) => {
     const year = index + 1;
     return rows.reduce((sum, fee) => {
-      if (fee.timing === "year1") return sum + (year === 1 ? fee.amount : 0);
+      if (fee.timing === "oneTimeFirstYear") return sum + (year === 1 ? fee.amount : 0);
       if (fee.timing === "spread") return sum + (year <= fee.spreadYears ? fee.amount / fee.spreadYears : 0);
-      if (fee.timing === "construction") return sum + (year <= constructionYears ? fee.amount : 0);
-      if (fee.timing === "operation") return sum + (year > constructionYears + rampUpYears ? fee.amount : 0);
+      if (fee.timing === "fullProjectAnnual") return sum + fee.amount;
+      if (fee.timing === "constructionAnnual") return sum + (year <= constructionYears ? fee.amount : 0);
+      if (fee.timing === "rampUpAnnual") return sum + (year > constructionYears && year <= constructionYears + rampUpYears ? fee.amount : 0);
       return sum;
     }, 0);
   });
@@ -1037,9 +1049,11 @@ export function calculateInfrastructureProjectForecast(input) {
     let yearOutstanding = 0;
     let yearAverageOutstanding = 0;
     let yearUndrawn = 0;
+    let yearTotalExposure = 0;
     let projectOutstanding = 0;
     let projectAverageOutstanding = 0;
     let projectUndrawn = 0;
+    let projectTotalExposure = 0;
     let interestIncome = 0;
     let feeIncome = 0;
     let ead = 0;
@@ -1082,14 +1096,22 @@ export function calculateInfrastructureProjectForecast(input) {
       const phasedLoanAfterFinalPulse = rule.isPhasedLoan ? isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears, rampUpYears) : false;
       const loanFrameForRwa =
         rule.isPhasedLoan
-          ? phasedLoanAfterFinalPulse ? averageOutstanding : amountIls
-          : loanFacilityMode === "facility" ? amountIls : averageOutstanding;
+          ? phasedLoanAfterFinalPulse ? closing : amountIls
+          : loanFacilityMode === "facility" ? amountIls : closing;
       const averageUndrawn = rule.isLoan ? Math.max(0, loanFrameForRwa - averageOutstanding) : 0;
-      const productEad = rule.isGuaranteeFacility
+      const productUndrawn = rule.isGuaranteeFacility
+        ? guaranteeFacilityUndrawn
+        : rule.isLoan
+          ? phasedLoanAfterFinalPulse ? 0 : Math.max(0, loanFrameForRwa - closing)
+          : 0;
+      const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
+      const productTotalExposure = productOutstanding + productUndrawn;
+      const rawProductEad = rule.isGuaranteeFacility
         ? guaranteeFacilityUtilized * ccf + guaranteeFacilityUndrawn * ccfUndrawn
         : rule.isLoan
         ? averageOutstanding * ccf + averageUndrawn * ccfUndrawn
         : guaranteeExposure * ccf;
+      const productEad = Math.min(rawProductEad, productTotalExposure);
       const rate = Math.max(0, Number(product.rate) || 0) / 100;
       let productIncome = 0;
       if (rule.incomeMode === "interest") {
@@ -1098,19 +1120,19 @@ export function calculateInfrastructureProjectForecast(input) {
         productIncome = nonLoanExposureApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
       }
 
-      const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      const productUndrawn = rule.isGuaranteeFacility ? guaranteeFacilityUndrawn : rule.isLoan ? Math.max(0, loanFrameForRwa - closing) : 0;
+      const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
 
       projectOutstanding += productOutstanding;
       projectAverageOutstanding += productAverageOutstanding;
       projectUndrawn += productUndrawn;
+      projectTotalExposure += productTotalExposure;
 
       if (isBankFunded) {
         yearDrawdown += drawdown;
         yearOutstanding += productOutstanding;
         yearAverageOutstanding += productAverageOutstanding;
         yearUndrawn += productUndrawn;
+        yearTotalExposure += productTotalExposure;
         interestIncome += rule.incomeMode === "interest" ? productIncome : 0;
         feeIncome += rule.incomeMode === "feeRate" ? productIncome : 0;
         ead += productEad;
@@ -1135,8 +1157,8 @@ export function calculateInfrastructureProjectForecast(input) {
     const discountedIncome = nominalIncome / Math.pow(1 + discountRate / 100, Math.max(0, year - 1));
     const totalIncome = nominalIncome;
 
-    const bankShareLimitExceeded = bankShareAmount > 0 && yearOutstanding > bankShareAmount;
-    const bankShareExcess = bankShareLimitExceeded ? yearOutstanding - bankShareAmount : 0;
+    const bankShareLimitExceeded = bankShareAmount > 0 && yearTotalExposure > bankShareAmount;
+    const bankShareExcess = bankShareLimitExceeded ? yearTotalExposure - bankShareAmount : 0;
 
     return {
       year,
@@ -1145,6 +1167,8 @@ export function calculateInfrastructureProjectForecast(input) {
       drawdown: yearDrawdown,
       outstanding: yearOutstanding,
       projectOutstanding,
+      totalExposure: yearTotalExposure,
+      projectTotalExposure,
       bankShareLimit: bankShareAmount,
       bankShareLimitExceeded,
       bankShareExcess,
@@ -1182,8 +1206,8 @@ export function calculateInfrastructureProjectForecast(input) {
   const averageAnnualIncome = totalIncome / years;
   const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / years;
   const averageReturnOnRwa = averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0;
-  const peakExposure = rows.reduce((max, row) => Math.max(max, row.outstanding), 0);
-  const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectOutstanding), 0);
+  const peakExposure = rows.reduce((max, row) => Math.max(max, row.totalExposure), 0);
+  const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectTotalExposure), 0);
   const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
   const bankShareLimitBreaches = rows.filter((row) => row.bankShareLimitExceeded);
   const maxBankShareExcess = rows.reduce((max, row) => Math.max(max, row.bankShareExcess || 0), 0);
@@ -1215,8 +1239,8 @@ export function calculateInfrastructureProjectForecast(input) {
     depositMargin,
     annualDepositIncome,
     feeAnalysis,
-    annualProjectManagementFee: feeAnalysis.rows.filter((row) => row.feeType === "constructionAnnual" || row.feeType === "operationAnnual").reduce((sum, row) => sum + row.amount, 0),
-    oneTimeFee: feeAnalysis.rows.filter((row) => row.timing === "year1").reduce((sum, row) => sum + row.amount, 0),
+    annualProjectManagementFee: feeAnalysis.rows.filter((row) => row.timing === "constructionAnnual" || row.timing === "rampUpAnnual" || row.timing === "fullProjectAnnual").reduce((sum, row) => sum + row.amount, 0),
+    oneTimeFee: feeAnalysis.rows.filter((row) => row.timing === "oneTimeFirstYear").reduce((sum, row) => sum + row.amount, 0),
     annualFixedFeeEnabled: false,
     annualFixedFee: 0,
     recurringAdditionalIncome: annualDepositIncome + otherIncome + (feeAnalysis.incomeByYear[0] || 0),
@@ -1520,4 +1544,442 @@ export function runCalculationTests() {
       failures: riskSaleProductPassed ? [] : [{ key: "riskSale", expected: "RWA reduction 40 and cost 1", actual: riskSaleProduct.totalRiskSaleCost }],
     },
   ];
+}
+
+export const CONSTRUCTION_REGULATORY_CHECKS = [
+  {
+    id: "closedAccount",
+    label: "חשבון פרויקט סגור ושעבוד תקבולים",
+    note: "ניהול כל התקבולים והתשלומים בחשבון ליווי ייעודי, עם בקרה על מקורות ושימושים ושעבוד זכויות הפרויקט לטובת הבנק.",
+  },
+  {
+    id: "voucherBook",
+    label: "שיטת שוברים לרוכשי דירות",
+    note: "תשלומי רוכשים אמורים להיכנס ישירות לחשבון הפרויקט באמצעות שוברים/מנגנון תשלום מבוקר, כדי לחבר בין תקבול לבין בטוחה לרוכש.",
+  },
+  {
+    id: "saleLawGuaranteeControl",
+    label: "בקרת ערבויות חוק מכר",
+    note: "הנפקת ערבות/בטוחה לפי חוק המכר כנגד תקבולי רוכשים, התאמת סכומים, הצמדה, ביטול ערבויות במסירת חזקה והעברת זכויות.",
+  },
+  {
+    id: "zeroReport",
+    label: "דו״ח אפס, תקציב ומפקח הנדסי",
+    note: "אישור דו״ח אפס, לוח זמנים, תקציב, מקורות הון עצמי ומנגנון שחרור כספים לפי אישורי מפקח והתקדמות ביצוע.",
+  },
+  {
+    id: "preSalesAndEquity",
+    label: "הון עצמי ומכירות מוקדמות",
+    note: "בדיקת עמידה בתנאי פתיחה, שיעור הון עצמי, קצב מכירות, מחירי מכירה בפועל ויחסי LTV/LTC/DSCR פנימיים.",
+  },
+  {
+    id: "permitsAndZoning",
+    label: "היתרים, תב״ע ורישום זכויות",
+    note: "בדיקת תוקף היתרי בנייה, זכויות בקרקע, שעבודים, הסכמי קומבינציה/תמורות, מיסוי ומגבלות רישום.",
+  },
+];
+
+
+export const CONSTRUCTION_COLLATERAL_TYPES = {
+  landMortgage: { label: "שעבוד קרקע", defaultHaircut: 35, defaultEligible: true, note: "שווי קרקע משועבד לאחר haircut שמרני." },
+  financialGuarantee: { label: "ערבות כספית", defaultHaircut: 0, defaultEligible: true, note: "ערבות כספית/פיקדון או התחייבות פיננסית כשירה." },
+  personalGuarantee: { label: "ערבות אישית", defaultHaircut: 100, defaultEligible: false, note: "ברירת מחדל ללא הפחתת RWA, אלא אם אושרה כשירות פרטנית." },
+  insurancePolicy: { label: "פוליסת ביטוח", defaultHaircut: 20, defaultEligible: true, note: "פוליסה קיימת כבטוחה/המחאת זכויות, בנפרד מביטוח שהבנק רוכש." },
+};
+
+export const CONSTRUCTION_INSURANCE_TYPES = {
+  guaranteeInsurance: { label: "ביטוח ערבויות" },
+  landInsurance: { label: "ביטוח קרקעות" },
+};
+
+export const CONSTRUCTION_INSURER_RATING_RULES = {
+  aaaToAa: { label: "AAA עד AA-", riskWeight: 20 },
+  a: { label: "A+ עד A-", riskWeight: 30 },
+  bbb: { label: "BBB+ עד BBB-", riskWeight: 50 },
+  bb: { label: "BB+ עד BB-", riskWeight: 100 },
+  bAndBelow: { label: "B+ ומטה", riskWeight: 150 },
+  unrated: { label: "לא מדורג", riskWeight: 150 },
+};
+
+function calculateConstructionCollateralAnalysis(collaterals = []) {
+  const rows = (collaterals || []).map((collateral) => {
+    const rule = CONSTRUCTION_COLLATERAL_TYPES[collateral.collateralType] || CONSTRUCTION_COLLATERAL_TYPES.landMortgage;
+    const amount = Math.max(0, Number(collateral.amount) || 0);
+    const haircut = clampNumber(collateral.haircutPct ?? rule.defaultHaircut, 0, 100);
+    const eligible = collateral.eligible ?? rule.defaultEligible;
+    const eligibleAmount = eligible ? amount * (1 - haircut / 100) : 0;
+    return {
+      ...collateral,
+      amount,
+      haircutPct: haircut,
+      eligible,
+      eligibleAmount,
+      typeLabel: rule.label,
+      typeNote: rule.note,
+    };
+  });
+
+  return {
+    rows,
+    totalAmount: rows.reduce((sum, row) => sum + row.amount, 0),
+    totalEligibleAmount: rows.reduce((sum, row) => sum + row.eligibleAmount, 0),
+  };
+}
+
+function calculateConstructionInsuranceAnalysis(insurances = []) {
+  const rows = (insurances || []).map((insurance) => {
+    const typeRule = CONSTRUCTION_INSURANCE_TYPES[insurance.insuranceType] || CONSTRUCTION_INSURANCE_TYPES.guaranteeInsurance;
+    const ratingRule = CONSTRUCTION_INSURER_RATING_RULES[insurance.insurerRating || "unrated"] || CONSTRUCTION_INSURER_RATING_RULES.unrated;
+    const insuredAmount = Math.max(0, Number(insurance.insuredAmount) || 0);
+    const amountMode = insurance.paymentMode || (Number(insurance.paymentAmount) > 0 ? "amount" : "pct");
+    const paymentPct = Math.max(0, Number(insurance.paymentPct) || 0);
+    const rawPaymentAmount = Math.max(0, Number(insurance.paymentAmount) || 0);
+    const annualCost = amountMode === "pct" ? insuredAmount * (paymentPct / 100) : rawPaymentAmount;
+    const resolvedPct = insuredAmount > 0 ? (annualCost / insuredAmount) * 100 : paymentPct;
+    return {
+      ...insurance,
+      typeLabel: typeRule.label,
+      insurerRating: insurance.insurerRating || "unrated",
+      insurerRatingLabel: ratingRule.label,
+      insurerRiskWeight: ratingRule.riskWeight,
+      insuredAmount,
+      paymentMode: amountMode,
+      paymentPct: resolvedPct,
+      paymentAmount: annualCost,
+      annualCost,
+    };
+  });
+  const totalInsuredAmount = rows.reduce((sum, row) => sum + row.insuredAmount, 0);
+  const totalAnnualCost = rows.reduce((sum, row) => sum + row.annualCost, 0);
+  const weightedInsurerRiskWeight = totalInsuredAmount > 0
+    ? rows.reduce((sum, row) => sum + row.insuredAmount * row.insurerRiskWeight, 0) / totalInsuredAmount
+    : 0;
+
+  return {
+    rows,
+    totalInsuredAmount,
+    totalAnnualCost,
+    monthlyCost: totalAnnualCost / 12,
+    weightedInsurerRiskWeight,
+  };
+}
+
+export const CONSTRUCTION_CREDIT_PRODUCT_TYPES = {
+  landLoan: { label: "הלוואת קרקע", stage: "land", isMezzanine: false, defaultRiskWeight: 150, defaultCcfUndrawn: 40 },
+  seniorConstruction: { label: "הלוואת בניה בכירה", stage: "construction", isMezzanine: false, defaultRiskWeight: 150, defaultCcfUndrawn: 40 },
+  mezzanineLoan: { label: "הלוואת מזנין", stage: "construction", isMezzanine: true, defaultRiskWeight: 200, defaultCcfUndrawn: 40 },
+};
+
+export const CONSTRUCTION_DRAWDOWN_FIELDS = Array.from({ length: 12 }, (_, index) => ({
+  field: `drawQ${index + 1}Pct`,
+  label: `רבעון ${index + 1}, %`,
+}));
+
+function getConstructionDrawPct(product, month, landMonths) {
+  const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
+  if (rule.stage === "land") return month === 1 ? 1 : 0;
+
+  const constructionMonth = month - landMonths;
+  if (constructionMonth < 1) return 0;
+  const quarterIndex = Math.ceil(constructionMonth / 3) - 1;
+  const field = CONSTRUCTION_DRAWDOWN_FIELDS[quarterIndex]?.field;
+  if (!field) return 0;
+  return clampNumber(product[field] ?? 0, 0, 100) / 100 / 3;
+}
+
+function getSaleLawGuaranteeEffectiveCcf(baseCcf, finalCcf, reductionStartPct, salesPct) {
+  const base = clampNumber(baseCcf, 0, 100) / 100;
+  const floor = clampNumber(finalCcf, 0, 100) / 100;
+  const start = clampNumber(reductionStartPct, 0, 100);
+  if (salesPct <= start) return base;
+  if (start >= 100) return base;
+  const progress = clampNumber((salesPct - start) / (100 - start), 0, 1);
+  return base - Math.max(0, base - floor) * progress;
+}
+
+export function createDefaultConstructionCreditProducts({ totalCost = 0, landCost = 0, equityPct = 25, bankSharePct = 100 } = {}) {
+  const equityAmount = Math.max(0, Number(totalCost) || 0) * (clampNumber(equityPct, 0, 100) / 100);
+  const defaultFacility = Math.max(0, (Number(totalCost) || 0) - equityAmount) * (clampNumber(bankSharePct, 0, 100) / 100);
+  const landFacility = Math.min(defaultFacility, Math.max(0, (Number(landCost) || 0) - Math.min(equityAmount, Number(landCost) || 0)) * (clampNumber(bankSharePct, 0, 100) / 100));
+  const constructionFacility = Math.max(0, defaultFacility - landFacility);
+
+  return [
+    {
+      id: 1,
+      name: "הלוואת קרקע",
+      productType: "landLoan",
+      amount: landFacility,
+      margin: 3.2,
+      ccfUndrawn: 40,
+      riskWeight: 150,
+      repaymentPriority: 1,
+    },
+    {
+      id: 2,
+      name: "הלוואת בניה בכירה",
+      productType: "seniorConstruction",
+      amount: constructionFacility,
+      margin: 3.2,
+      ccfUndrawn: 40,
+      riskWeight: 150,
+      repaymentPriority: 1,
+      drawQ1Pct: 8.33,
+      drawQ2Pct: 8.33,
+      drawQ3Pct: 8.33,
+      drawQ4Pct: 8.33,
+      drawQ5Pct: 8.33,
+      drawQ6Pct: 8.33,
+      drawQ7Pct: 8.33,
+      drawQ8Pct: 8.33,
+      drawQ9Pct: 8.33,
+      drawQ10Pct: 8.33,
+      drawQ11Pct: 8.33,
+      drawQ12Pct: 8.37,
+    },
+    {
+      id: 3,
+      name: "הלוואת מזנין",
+      productType: "mezzanineLoan",
+      amount: 0,
+      margin: 7.5,
+      ccfUndrawn: 40,
+      riskWeight: 200,
+      repaymentPriority: 2,
+      drawQ1Pct: 0,
+      drawQ2Pct: 0,
+      drawQ3Pct: 0,
+      drawQ4Pct: 0,
+      drawQ5Pct: 0,
+      drawQ6Pct: 0,
+      drawQ7Pct: 0,
+      drawQ8Pct: 0,
+      drawQ9Pct: 0,
+      drawQ10Pct: 0,
+      drawQ11Pct: 0,
+      drawQ12Pct: 0,
+    },
+  ];
+}
+
+export function calculateConstructionProjectForecast(input = {}) {
+  const landMonths = clampNumber(input.landMonths ?? 24, 0, 84);
+  const constructionMonths = clampNumber(input.constructionMonths ?? 36, 1, 96);
+  const totalMonths = Math.max(1, Math.round(landMonths + constructionMonths));
+  const totalCost = Math.max(0, Number(input.totalCost) || 0);
+  const landCost = Math.max(0, Number(input.landCost) || 0);
+  const expectedRevenue = Math.max(0, Number(input.expectedRevenue) || 0);
+  const equityPct = clampNumber(input.equityPct ?? 25, 0, 100);
+  const bankSharePct = clampNumber(input.bankSharePct ?? 100, 0, 100);
+  const loanMargin = Math.max(0, Number(input.loanMargin) || 0);
+  const guaranteeFeeRate = Math.max(0, Number(input.guaranteeFeeRate) || 0);
+  const saleLawGuaranteeFeeRate = Math.max(0, Number(input.saleLawGuaranteeFeeRate) || 0);
+  const accountManagementFee = Math.max(0, Number(input.accountManagementFee) || 0);
+  const setupFeePct = Math.max(0, Number(input.setupFeePct) || 0);
+  const legalAndControlFees = Math.max(0, Number(input.legalAndControlFees) || 0);
+  const landRiskWeight = Math.max(0, Number(input.landRiskWeight) || 150);
+  const constructionRiskWeight = Math.max(0, Number(input.constructionRiskWeight) || 150);
+  const saleLawGuaranteeCcf = clampNumber(input.saleLawGuaranteeCcf ?? 50, 0, 100);
+  const saleLawGuaranteeFinalCcf = clampNumber(input.saleLawGuaranteeFinalCcf ?? 20, 0, 100);
+  const saleLawGuaranteeReductionStartPct = clampNumber(input.saleLawGuaranteeReductionStartPct ?? 80, 0, 100);
+  const guaranteeCcf = Math.max(0, Number(input.guaranteeCcf) || 50) / 100;
+  const undrawnLoanCcf = Math.max(0, Number(input.undrawnLoanCcf) || 40) / 100;
+  const completionGuaranteeLimit = Math.max(0, Number(input.completionGuaranteeLimit) || 0);
+  const equityAmount = totalCost * (equityPct / 100);
+  const fallbackProducts = createDefaultConstructionCreditProducts({ totalCost, landCost, equityPct, bankSharePct });
+  const creditProducts = (input.creditProducts && input.creditProducts.length > 0 ? input.creditProducts : fallbackProducts).map((product, index) => {
+    const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
+    return {
+      ...product,
+      productType: product.productType || "seniorConstruction",
+      name: product.name || rule.label,
+      amount: Math.max(0, Number(product.amount) || 0),
+      margin: Math.max(0, Number(product.margin ?? loanMargin) || 0),
+      ccfUndrawn: clampNumber(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 40, 0, 100),
+      riskWeight: Math.max(0, Number(product.riskWeight ?? rule.defaultRiskWeight ?? constructionRiskWeight) || 0),
+      repaymentPriority: Math.max(1, Math.round(Number(product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)) || 1)),
+      id: product.id ?? index + 1,
+    };
+  });
+  const totalLoanFacility = creditProducts.reduce((sum, product) => sum + product.amount, 0);
+  const landLoanFacility = creditProducts.filter((product) => (CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {}).stage === "land").reduce((sum, product) => sum + product.amount, 0);
+  const mezzanineFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isMezzanine).reduce((sum, product) => sum + product.amount, 0);
+  const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility - mezzanineFacility);
+  const seniorLoanFacility = Math.max(0, totalLoanFacility - mezzanineFacility);
+  const saleLawGuaranteeFacility = expectedRevenue * (bankSharePct / 100);
+  const setupFee = totalLoanFacility * (setupFeePct / 100);
+  const monthlyAccountFee = accountManagementFee / 12;
+  const monthlyControlFee = legalAndControlFees / 12;
+  const monthlySalesRevenue = constructionMonths > 0 ? expectedRevenue / constructionMonths : 0;
+  const collateralAnalysis = calculateConstructionCollateralAnalysis(input.collaterals || []);
+  const insuranceAnalysis = calculateConstructionInsuranceAnalysis(input.insurances || []);
+
+  const balances = Object.fromEntries(creditProducts.map((product) => [product.id, 0]));
+  let cumulativeSales = 0;
+  const rows = Array.from({ length: totalMonths }, (_, index) => {
+    const month = index + 1;
+    const isLand = month <= landMonths;
+    const stage = isLand ? "קרקע" : "בניה";
+    const salesInflow = isLand ? 0 : monthlySalesRevenue;
+    cumulativeSales = Math.min(expectedRevenue, cumulativeSales + salesInflow);
+    const salesPct = expectedRevenue > 0 ? (cumulativeSales / expectedRevenue) * 100 : 0;
+    let remainingSweep = isLand ? 0 : salesInflow * (bankSharePct / 100);
+    let loanDraw = 0;
+    let loanOutstanding = 0;
+    let avgLoan = 0;
+    let undrawnLoan = 0;
+    let interestIncome = 0;
+    let loanEad = 0;
+    let loanRwa = 0;
+    let weightedRiskNumerator = 0;
+    const productOpenings = Object.fromEntries(creditProducts.map((product) => [product.id, balances[product.id] || 0]));
+    const openingTotal = creditProducts.reduce((sum, product) => sum + (productOpenings[product.id] || 0), 0);
+
+    creditProducts.forEach((product) => {
+      const opening = productOpenings[product.id] || 0;
+      const draw = Math.min(Math.max(0, product.amount - opening), product.amount * getConstructionDrawPct(product, month, landMonths));
+      balances[product.id] = opening + draw;
+      loanDraw += draw;
+    });
+
+    [...creditProducts].sort((a, b) => a.repaymentPriority - b.repaymentPriority).forEach((product) => {
+      const openingAfterDraw = balances[product.id] || 0;
+      const repayment = Math.min(openingAfterDraw, remainingSweep);
+      balances[product.id] = Math.max(0, openingAfterDraw - repayment);
+      remainingSweep = Math.max(0, remainingSweep - repayment);
+    });
+
+    creditProducts.forEach((product) => {
+      const opening = productOpenings[product.id] || 0;
+      const closing = balances[product.id] || 0;
+      const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
+      const averageOutstanding = (opening + closing) / 2;
+      const productUndrawn = Math.max(0, product.amount - closing);
+      const productEad = averageOutstanding + productUndrawn * (product.ccfUndrawn / 100);
+      loanEad += productEad;
+      loanOutstanding += closing;
+      avgLoan += averageOutstanding;
+      undrawnLoan += productUndrawn;
+      interestIncome += averageOutstanding * (product.margin / 100) / 12;
+      loanRwa += productEad * (product.riskWeight / 100);
+      weightedRiskNumerator += productEad * product.riskWeight;
+    });
+
+    const saleLawGuaranteeOutstanding = Math.min(saleLawGuaranteeFacility, cumulativeSales * (bankSharePct / 100));
+    const completionGuaranteeOutstanding = isLand ? 0 : completionGuaranteeLimit * (bankSharePct / 100);
+    const effectiveSaleLawGuaranteeCcf = getSaleLawGuaranteeEffectiveCcf(saleLawGuaranteeCcf, saleLawGuaranteeFinalCcf, saleLawGuaranteeReductionStartPct, salesPct);
+    const saleLawGuaranteeEad = saleLawGuaranteeOutstanding * effectiveSaleLawGuaranteeCcf;
+    const completionGuaranteeEad = completionGuaranteeOutstanding * guaranteeCcf;
+    const ead = loanEad + saleLawGuaranteeEad + completionGuaranteeEad;
+    const riskWeight = isLand ? landRiskWeight : constructionRiskWeight;
+    const guaranteeRwa = (saleLawGuaranteeEad + completionGuaranteeEad) * (riskWeight / 100);
+    const rwaBeforeCreditRiskMitigation = loanRwa + guaranteeRwa;
+    const baseRwaRate = ead > 0 ? rwaBeforeCreditRiskMitigation / ead : 0;
+    const eligibleCollateral = Math.min(ead, collateralAnalysis.totalEligibleAmount);
+    const remainingAfterCollateral = Math.max(0, ead - eligibleCollateral);
+    const insuredEad = Math.min(remainingAfterCollateral, insuranceAnalysis.totalInsuredAmount);
+    const collateralRwaSaving = eligibleCollateral * baseRwaRate;
+    const insuranceRwaSaving = insuredEad * Math.max(baseRwaRate - insuranceAnalysis.weightedInsurerRiskWeight / 100, 0);
+    const rwa = Math.max(0, rwaBeforeCreditRiskMitigation - collateralRwaSaving - insuranceRwaSaving);
+    const insuranceRwa = insuredEad * (insuranceAnalysis.weightedInsurerRiskWeight / 100);
+    const insuranceExpense = insuranceAnalysis.monthlyCost;
+    const guaranteeIncome = completionGuaranteeOutstanding * (guaranteeFeeRate / 100) / 12;
+    const saleLawGuaranteeIncome = saleLawGuaranteeOutstanding * (saleLawGuaranteeFeeRate / 100) / 12;
+    const feeIncome = guaranteeIncome + saleLawGuaranteeIncome + monthlyAccountFee + monthlyControlFee + (month === 1 ? setupFee : 0);
+    const totalIncome = interestIncome + feeIncome - insuranceExpense;
+
+    return {
+      month,
+      label: `חודש ${month}`,
+      stage,
+      loanDraw,
+      salesInflow,
+      cumulativeSales,
+      loanRepayment: Math.max(0, openingTotal + loanDraw - loanOutstanding),
+      loanOutstanding,
+      avgLoan,
+      undrawnLoan,
+      saleLawGuaranteeOutstanding,
+      effectiveSaleLawGuaranteeCcf: effectiveSaleLawGuaranteeCcf * 100,
+      saleLawGuaranteeEad,
+      completionGuaranteeOutstanding,
+      ead,
+      riskWeight,
+      loanEad,
+      loanRwa,
+      guaranteeRwa,
+      rwaBeforeCreditRiskMitigation,
+      eligibleCollateral,
+      insuredEad,
+      insuranceRwa,
+      collateralRwaSaving,
+      insuranceRwaSaving,
+      rwa,
+      interestIncome,
+      guaranteeIncome,
+      saleLawGuaranteeIncome,
+      feeIncome,
+      insuranceExpense,
+      totalIncome,
+      returnOnRwa: rwa > 0 ? (totalIncome * 12 / rwa) * 100 : 0,
+      salesPct,
+      weightedLoanRiskWeight: avgLoan > 0 ? weightedRiskNumerator / Math.max(avgLoan, 1) : 0,
+    };
+  });
+
+  const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
+  const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / rows.length;
+  const averageAnnualIncome = totalIncome / (rows.length / 12);
+  const peakLoanOutstanding = rows.reduce((max, row) => Math.max(max, row.loanOutstanding), 0);
+  const peakSaleLawGuarantees = rows.reduce((max, row) => Math.max(max, row.saleLawGuaranteeOutstanding), 0);
+  const peakEad = rows.reduce((max, row) => Math.max(max, row.ead), 0);
+  const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
+  const totalCollateralRwaSaving = rows.reduce((sum, row) => sum + row.collateralRwaSaving, 0);
+  const totalInsuranceRwaSaving = rows.reduce((sum, row) => sum + row.insuranceRwaSaving, 0);
+  const totalInsuranceExpense = rows.reduce((sum, row) => sum + row.insuranceExpense, 0);
+  const grossProfit = expectedRevenue - totalCost;
+  const grossMarginPct = expectedRevenue > 0 ? (grossProfit / expectedRevenue) * 100 : 0;
+  const ltvBeforeMezzanine = expectedRevenue > 0 ? (seniorLoanFacility / expectedRevenue) * 100 : 0;
+  const ltvAfterMezzanine = expectedRevenue > 0 ? (totalLoanFacility / expectedRevenue) * 100 : 0;
+
+  return {
+    rows,
+    landMonths,
+    constructionMonths,
+    totalMonths,
+    totalCost,
+    landCost,
+    expectedRevenue,
+    grossProfit,
+    grossMarginPct,
+    equityPct,
+    equityAmount,
+    bankSharePct,
+    collateralAnalysis,
+    insuranceAnalysis,
+    creditProducts,
+    totalLoanFacility,
+    seniorLoanFacility,
+    mezzanineFacility,
+    landLoanFacility,
+    constructionLoanFacility,
+    saleLawGuaranteeFacility,
+    saleLawGuaranteeCcf,
+    saleLawGuaranteeFinalCcf,
+    saleLawGuaranteeReductionStartPct,
+    completionGuaranteeLimit: completionGuaranteeLimit * (bankSharePct / 100),
+    totalIncome,
+    averageAnnualIncome,
+    averageRwa,
+    averageReturnOnRwa: averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0,
+    peakLoanOutstanding,
+    peakSaleLawGuarantees,
+    peakEad,
+    peakRwa,
+    totalCollateralRwaSaving,
+    totalInsuranceRwaSaving,
+    totalInsuranceExpense,
+    ltvBeforeMezzanine,
+    ltvAfterMezzanine,
+    regulatoryChecks: CONSTRUCTION_REGULATORY_CHECKS,
+  };
 }
