@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Calculator } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -268,7 +270,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-4">
-                <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={forecast.rows} lines={[{ key: "outstanding", name: "יתרת אשראי", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
+                <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={forecast.rows} lines={[{ key: "totalExposure", name: "חשיפה כוללת", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
                 <PrintLineChart title="הכנסות ותשואה" data={forecast.rows} lines={[{ key: "totalIncome", name: "הכנסות", color: "#f97316" }, { key: "discountedIncome", name: "מהוון", color: "#64748b" }]} />
               </div>
             </div>
@@ -283,7 +285,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                     <Tooltip formatter={(value) => formatK(Number(value))} />
                     <Legend />
-                    <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת כל הפרויקט" />
+                    <Line type="monotone" dataKey="projectTotalExposure" stroke="#0ea5e9" strokeWidth={3} dot={false} name="חשיפה כוללת כל הפרויקט" />
                     <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
                     <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="יתרת הבנק" />
                   </LineChart>
@@ -299,7 +301,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
                   <tbody>
                     {forecast.rows.slice(0, 18).map((row) => (
                       <tr key={row.year} className="border-t">
-                        <td className="p-2 font-medium">{row.year}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.outstanding)}</td><td className="p-2">{formatM(row.projectOutstanding)}</td><td className="p-2 font-bold text-emerald-700">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.interestIncome, 2)}</td><td className="p-2">{formatM(row.feeIncome, 2)}</td><td className="p-2">{row.returnOnRwa.toFixed(2)}%</td>
+                        <td className="p-2 font-medium">{row.year}</td><td className="p-2">{row.stage}</td><td className="p-2">{formatM(row.totalExposure)}</td><td className="p-2">{formatM(row.projectTotalExposure)}</td><td className="p-2 font-bold text-emerald-700">{formatM(row.rwa)}</td><td className="p-2">{formatM(row.interestIncome, 2)}</td><td className="p-2">{formatM(row.feeIncome, 2)}</td><td className="p-2">{row.returnOnRwa.toFixed(2)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -959,6 +961,8 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
         rate: 2,
         interestBase: "",
         customerRate: 0,
+        undrawnRate: 0.7,
+        undrawnCustomerRate: 0,
         feeTiming: "fullProjectAnnual",
         ccf: 100,
         ccfUndrawn: 40,
@@ -1239,6 +1243,20 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                               </FieldBox>
                             )}
 
+                            {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
+                              <FieldBox title="מרווח לא מנוצל, %">
+                                <NumberCell wide value={product.undrawnRate ?? (Math.max(0, Number(product.rate) || 0) / 3)} onChange={(v) => updateProduct(product.id, "undrawnRate", clampNumber(v, 0, 30))} />
+                                <div className="mt-1 text-[11px] text-slate-500">לרוב כשליש מהמרווח על החלק המנוצל.</div>
+                              </FieldBox>
+                            )}
+
+                            {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
+                              <FieldBox title="ריבית לקוח לא מנוצל, %">
+                                <NumberCell wide value={product.undrawnCustomerRate ?? (Math.max(0, Number(product.customerRate || product.rate) || 0) / 3)} onChange={(v) => updateProduct(product.id, "undrawnCustomerRate", clampNumber(v, 0, 30))} />
+                                <div className="mt-1 text-[11px] text-slate-500">נתון מחיר ללקוח; המרווח למעלה נכנס להכנסות.</div>
+                              </FieldBox>
+                            )}
+
                             {product.amortizationType === "grace" && (
                               <FieldBox title="גרייס, חודשים">
                                 <MonthsCell
@@ -1259,7 +1277,7 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                             )}
                           </div>
                           <div className="mt-2 text-xs text-slate-500">
-                            בהלוואה stand-alone אין מסגרת לא מנוצלת לאחר העמדה. בהלוואה מתוך מסגרת מחושב EAD גם על החלק הלא מנוצל. בהלוואה בפעימות המסגרת נשארת בגובה ההלוואה המקסימלית עד הפעימה האחרונה, ולאחריה מצטמצמת לגובה האשראי שנוצל.
+                            בהלוואה stand-alone אין מסגרת לא מנוצלת לאחר העמדה. בהלוואה מתוך מסגרת מחושב EAD גם על החלק הלא מנוצל עד תום תקופת ההלוואה. בהלוואה בפעימות המסגרת נשארת בגובה ההלוואה המקסימלית עד הפעימה האחרונה, ולאחריה מצטמצמת במקביל לפירעונות האשראי.
                           </div>
                         </td>
                       </tr>
@@ -1291,11 +1309,6 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                               value={`${INFRA_PULSE_FIELDS.reduce((sum, { field }) => sum + (Number(product[field]) || 0), 0).toFixed(1)}%`}
                               tone="orange"
                             />
-
-                            <FieldBox title="CCF לא מנוצל">
-                              <NumberCell wide value={product.ccfUndrawn ?? 40} onChange={(v) => updateProduct(product.id, "ccfUndrawn", clampNumber(v, 0, 100))} />
-                              <div className="mt-1 text-[11px] text-slate-500">מחושב על החלק שטרם הועמד בפעימות</div>
-                            </FieldBox>
                           </div>
                           <div className="mt-2 text-xs text-orange-900">
                             הלוואה בפעימות מוצגת בשלוש שורות: שורה ראשית, שורת פרטי הלוואה ושורת פעימות. בתצוגה רבעונית, 4 פעימות ראשונות מרוכזות בשנה הראשונה ו־4 נוספות בשנה השנייה; בתצוגה שנתית, הפעימות נפרסות על שנים 1–8.
@@ -1371,13 +1384,13 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
 
   const addFee = () => {
     setFees((rows) => [
-      { id: Date.now(), feeType: "constructionAnnual", amountMode: "pct", pct: 0, amount: 0, spreadYears: 1 },
+      { id: Date.now(), label: "עמלת פרויקט", timing: "constructionAnnual", amountMode: "pct", pct: 0, amount: 0, spreadYears: 1 },
       ...(rows || []),
     ]);
   };
 
   const removeFee = (id) => setFees((rows) => (rows || []).filter((row) => row.id !== id));
-  const analysis = calculateInfrastructureFees(fees, feeBaseAmount, 99, 0, 99);
+  const analysis = calculateInfrastructureFees(fees, feeBaseAmount, 99, 1, 99);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4" dir="rtl">
@@ -1386,7 +1399,7 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
           <div>
             <h2 className="text-2xl font-bold">עמלות פרויקט ועסקה</h2>
             <p className="mt-1 text-sm text-slate-600">
-              עמלת ארגון נגבית בתחילת העסקה, עמלות UP FRONT נפרסות לשנים, ועמלות פרויקט נגבות בכל שנה בתקופת ההקמה או ההפעלה.
+              לכל עמלה ניתן להזין שם חופשי, סכום או אחוז מחלק הבנק, ומועד גבייה: חד־פעמי בתחילת הפרויקט, שנתי לאורך חיי הפרויקט, שנתי בתקופת ההקמה או שנתי בתקופת ההרצה.
             </p>
           </div>
           <div className="flex gap-2">
@@ -1405,43 +1418,40 @@ export function InfraFeesModal({ fees, setFees, feeBaseAmount, onClose }) {
           <table className="w-full min-w-[1120px] text-sm">
             <thead className="sticky top-0 z-10 bg-white text-slate-600 shadow-sm">
               <tr>
-                <th className="p-2 text-right">סוג עמלה</th>
+                <th className="p-2 text-right">שם עמלה</th>
                 <th className="p-2 text-right">אחוז מחלק הבנק</th>
                 <th className="p-2 text-right">סכום ₪k</th>
-                <th className="p-2 text-right">פריסה בשנים</th>
                 <th className="p-2 text-right">מועד גבייה</th>
                 <th className="p-2 text-right">מחיקה</th>
               </tr>
             </thead>
             <tbody>
               {(fees || []).map((fee) => {
-                const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
+                const fallbackConfig = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
                 const amountMode = fee.amountMode || (Number(fee.amount) > 0 ? "amount" : "pct");
                 const resolvedAmount = amountMode === "pct" ? feeBaseAmount * ((Number(fee.pct) || 0) / 100) : Math.max(0, Number(fee.amount) || 0);
                 const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : Number(fee.pct) || 0;
+                const normalizedTiming = fee.timing || (fallbackConfig.timing === "year1" ? "oneTimeFirstYear" : fallbackConfig.timing === "construction" ? "constructionAnnual" : fallbackConfig.timing === "operation" ? "fullProjectAnnual" : "oneTimeFirstYear");
                 return (
                   <tr key={fee.id} className="border-b align-top">
                     <td className="p-2">
-                      <select value={fee.feeType} onChange={(event) => updateFee(fee.id, "feeType", event.target.value)} className="w-56 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
-                        {Object.entries(INFRA_FEE_TYPES).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
+                      <input
+                        value={fee.label || fee.name || fallbackConfig.label}
+                        onChange={(event) => updateFee(fee.id, "label", event.target.value)}
+                        className="w-64 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <NumberCell value={resolvedPct} onChange={(v) => updateFee(fee.id, "pct", clampNumber(v, 0, 100))} />
+                    </td>
+                    <td className="p-2">
+                      <NumberCell value={resolvedAmount} onChange={(v) => updateFee(fee.id, "amount", clampNumber(v, 0, 10000000))} />
+                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז או סכום; השדה השני יושלם</div>
+                    </td>
+                    <td className="p-2">
+                      <select value={normalizedTiming} onChange={(event) => updateFee(fee.id, "timing", event.target.value)} className="w-56 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                        {Object.entries(INFRA_FEE_TIMING_OPTIONS).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}
                       </select>
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={resolvedPct} disabled={!config.allowPct} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "pct", pct: clampNumber(v, 0, 100), amount: 0 } : row))} />
-                      {!config.allowPct && <div className="mt-1 text-[11px] text-slate-400">מחושב מהסכום</div>}
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={resolvedAmount} onChange={(v) => setFees((rows) => (rows || []).map((row) => row.id === fee.id ? { ...row, amountMode: "amount", amount: clampNumber(v, 0, 10000000) } : row))} />
-                      <div className="mt-1 text-[11px] text-slate-400">הזיני אחוז מחלק הבנק או סכום, השני יושלם</div>
-                    </td>
-                    <td className="p-2">
-                      <NumberCell value={fee.spreadYears ?? 1} disabled={config.timing !== "spread"} onChange={(v) => updateFee(fee.id, "spreadYears", clampNumber(v, 1, 35))} />
-                    </td>
-                    <td className="p-2 text-xs leading-5 text-slate-600">
-                      {config.timing === "year1" && "נגבית בתחילת העסקה"}
-                      {config.timing === "spread" && "נפרסת על פני מספר שנים"}
-                      {config.timing === "construction" && "נגבית כל שנה בתקופת ההקמה"}
-                      {config.timing === "operation" && "נגבית כל שנה בתקופת ההפעלה"}
                     </td>
                     <td className="p-2">
                       <button type="button" onClick={() => removeFee(fee.id)} className="rounded-xl bg-red-50 px-3 py-1 text-red-700 hover:bg-red-100">מחק</button>
@@ -1753,6 +1763,50 @@ export function InfrastructureProjectPanel({
 }) {
   const firstYear = forecast.rows[0] || {};
   const [projectChartTab, setProjectChartTab] = useState("creditRisk");
+  const [profitabilityPeriod, setProfitabilityPeriod] = useState("firstYear");
+  const productChartColors = ["#f97316", "#0ea5e9", "#22c55e", "#a855f7", "#eab308", "#ef4444", "#14b8a6", "#64748b"];
+  const profitabilityPeriodOptions = [
+    { value: "firstYear", label: "שנה ראשונה" },
+    { value: "constructionRampUpAvg", label: "ממוצע הקמה והרצה" },
+    { value: "operationAvg", label: "ממוצע תפעול" },
+  ];
+  const productChartNames = useMemo(() => {
+    const names = new Set();
+    (forecast.rows || []).forEach((row) => {
+      (row.productDetails || []).forEach((detail) => {
+        names.add(detail.productName || detail.productTypeLabel || "מוצר אשראי");
+      });
+    });
+    return Array.from(names);
+  }, [forecast.rows]);
+  const productProfitabilityData = useMemo(() => {
+    const constructionRampUpEndYear = Math.ceil(Number(constructionYears || 0) + Number(rampUpYears || 0));
+    const periodRows = (forecast.rows || []).filter((row) => {
+      if (profitabilityPeriod === "firstYear") return row.year === 1;
+      if (profitabilityPeriod === "constructionRampUpAvg") return row.year <= Math.max(1, constructionRampUpEndYear);
+      return row.year > constructionRampUpEndYear;
+    });
+    const divisor = Math.max(1, periodRows.length);
+    const totals = new Map();
+    periodRows.forEach((row) => {
+      (row.productDetails || []).forEach((detail) => {
+        if (!detail.isBankFunded) return;
+        const name = detail.productName || detail.productTypeLabel || "מוצר אשראי";
+        totals.set(name, (totals.get(name) || 0) + (Number(detail.income) || 0));
+      });
+    });
+    return Array.from(totals.entries())
+      .map(([name, income]) => ({ name, income: income / divisor }))
+      .sort((a, b) => b.income - a.income);
+  }, [constructionYears, forecast.rows, profitabilityPeriod, rampUpYears]);
+  const exposureByProductData = useMemo(() => (forecast.rows || []).map((row) => {
+    const entry = { label: row.label };
+    (row.productDetails || []).forEach((detail) => {
+      const name = detail.productName || detail.productTypeLabel || "מוצר אשראי";
+      entry[name] = (entry[name] || 0) + (Number(detail.totalExposure) || 0);
+    });
+    return entry;
+  }), [forecast.rows]);
   const handleProjectCurrencyChange = (nextCurrency) => {
     setProjectCurrency(nextCurrency);
     setProducts?.((rows) =>
@@ -1949,7 +2003,7 @@ export function InfrastructureProjectPanel({
             </div>
             {forecast.bankShareLimitBreaches.length > 0 && (
               <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800">
-                <b>בקרת חריגה:</b> קיימות {forecast.bankShareLimitBreaches.length} שנים שבהן החבות בפרויקט גבוהה מחלק הבנק בפרויקט. החריגה המקסימלית היא {formatK(forecast.maxBankShareExcess)}. יש להקטין סכומי מוצרים או לעדכן את חלק הבנק בסינדיקציה.
+                <b>בקרת חריגה:</b> קיימות {forecast.bankShareLimitBreaches.length} שנים שבהן החשיפה הכוללת בפרויקט גבוהה מחלק הבנק בפרויקט. החריגה המקסימלית היא {formatK(forecast.maxBankShareExcess)}. יש להקטין סכומי מוצרים או לעדכן את חלק הבנק בסינדיקציה.
               </div>
             )}
           </div>
@@ -1966,12 +2020,14 @@ export function InfrastructureProjectPanel({
             <TabButton active={projectChartTab === "creditRisk"} onClick={() => setProjectChartTab("creditRisk")}>אשראי ו־RWA</TabButton>
             <TabButton active={projectChartTab === "projectCredit"} onClick={() => setProjectChartTab("projectCredit")}>אשראי ומסגרות — כל הפרויקט</TabButton>
             <TabButton active={projectChartTab === "incomeReturn"} onClick={() => setProjectChartTab("incomeReturn")}>הכנסות ותשואה</TabButton>
+            <TabButton active={projectChartTab === "profitByProduct"} onClick={() => setProjectChartTab("profitByProduct")}>תרומה לרווחיות לפי מוצר</TabButton>
+            <TabButton active={projectChartTab === "exposureByProduct"} onClick={() => setProjectChartTab("exposureByProduct")}>התפלגות חשיפה לפי מוצר</TabButton>
           </div>
         </div>
 
         {projectChartTab === "creditRisk" && (
           <div className="rounded-3xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 font-semibold">אשראי, חבות ונכסי סיכון לאורך חיי הפרויקט</div>
+            <div className="mb-3 font-semibold">אשראי, מסגרות ונכסי סיכון לאורך חיי הפרויקט</div>
             <div className="h-96 min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={forecast.rows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
@@ -1980,8 +2036,9 @@ export function InfrastructureProjectPanel({
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
-                  <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="יתרת אשראי" />
-                  <Line type="monotone" dataKey="averageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חבות / חשיפה ממוצעת" />
+                  <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="אשראי מנוצל בפועל" />
+                  <Line type="monotone" dataKey="undrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                  <Line type="monotone" dataKey="totalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת" />
                   <Line type="monotone" dataKey="rwa" stroke="#22c55e" strokeWidth={3} dot={false} name="נכסי סיכון" />
                   <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק בפרויקט" />
                 </LineChart>
@@ -2001,9 +2058,9 @@ export function InfrastructureProjectPanel({
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
-                  <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="יתרת אשראי כל הפרויקט" />
-                  <Line type="monotone" dataKey="projectAverageOutstanding" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה ממוצעת כל הפרויקט" />
+                  <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="אשראי מנוצל כל הפרויקט" />
                   <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
+                  <Line type="monotone" dataKey="projectTotalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת כל הפרויקט" />
                   <Line type="monotone" dataKey="bankShareLimit" stroke="#dc2626" strokeWidth={2} strokeDasharray="5 5" dot={false} name="חלק הבנק" />
                 </LineChart>
               </ResponsiveContainer>
@@ -2031,6 +2088,54 @@ export function InfrastructureProjectPanel({
             </div>
           </div>
         )}
+
+        {projectChartTab === "profitByProduct" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-semibold">תרומה לרווחיות לפי מוצר</div>
+                <div className="text-xs text-slate-500">הגרף מציג הכנסה שנתית ממוצעת/שנתית ממוצרי הבנק, כולל הכנסה על מסגרת לא מנוצלת.</div>
+              </div>
+              <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-100 p-1">
+                {profitabilityPeriodOptions.map((option) => (
+                  <TabButton key={option.value} active={profitabilityPeriod === option.value} onClick={() => setProfitabilityPeriod(option.value)}>{option.label}</TabButton>
+                ))}
+              </div>
+            </div>
+            <div className="h-96 min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={productProfitabilityData} margin={{ top: 20, right: 10, left: 10, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={70} />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                  <Tooltip formatter={(value) => formatK(Number(value))} />
+                  <Legend />
+                  <Bar dataKey="income" fill="#f97316" name="תרומה להכנסה" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {projectChartTab === "exposureByProduct" && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold">התפלגות החשיפה הכוללת בכל שנה לפי מוצר</div>
+            <div className="h-96 min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={exposureByProductData} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                  <Tooltip formatter={(value) => formatK(Number(value))} />
+                  <Legend />
+                  {productChartNames.map((name, index) => (
+                    <Bar key={name} dataKey={name} stackId="exposure" fill={productChartColors[index % productChartColors.length]} name={name} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </Panel>
 
       <Panel>
@@ -2042,9 +2147,9 @@ export function InfrastructureProjectPanel({
                 <th className="p-3 text-right">שנה</th>
                 <th className="p-3 text-right">שלב</th>
                 <th className="p-3 text-right">שחרור כספים</th>
-                <th className="p-3 text-right">יתרת אשראי</th>
-                <th className="p-3 text-right">חבות/חשיפה ממוצעת</th>
-                <th className="p-3 text-right">לא מנוצל</th>
+                <th className="p-3 text-right">אשראי מנוצל</th>
+                <th className="p-3 text-right">מסגרות לא מנוצלות</th>
+                <th className="p-3 text-right">חשיפה כוללת</th>
                 <th className="p-3 text-right">חלק הבנק</th>
                 <th className="p-3 text-right">חריגה</th>
                 <th className="p-3 text-right">RWA</th>
@@ -2062,8 +2167,8 @@ export function InfrastructureProjectPanel({
                   <td className="p-3">{row.stage}</td>
                   <td className="p-3">{formatK(row.drawdown)}</td>
                   <td className="p-3 font-medium">{formatK(row.outstanding)}</td>
-                  <td className="p-3">{formatK(row.averageOutstanding)}</td>
                   <td className="p-3">{formatK(row.undrawn)}</td>
+                  <td className="p-3 font-bold text-slate-700">{formatK(row.totalExposure)}</td>
                   <td className="p-3">{formatK(row.bankShareLimit)}</td>
                   <td className={`p-3 font-bold ${row.bankShareLimitExceeded ? "text-red-700" : "text-emerald-700"}`}>{row.bankShareLimitExceeded ? formatK(row.bankShareExcess) : "תקין"}</td>
                   <td className="p-3 font-bold text-emerald-700">{formatK(row.rwa)}</td>

@@ -203,9 +203,10 @@ export const INFRA_PRODUCT_STAGES = {
 };
 
 export const INFRA_FEE_TIMING_OPTIONS = {
-  oneTimeFirstYear: { label: "חד פעמית בשנה הראשונה" },
+  oneTimeFirstYear: { label: "חד פעמית בתחילת הפרויקט" },
   fullProjectAnnual: { label: "שנתית לאורך חיי הפרויקט" },
   constructionAnnual: { label: "שנתית בתקופת ההקמה" },
+  rampUpAnnual: { label: "שנתית בתקופת ההרצה" },
 };
 
 export const INFRA_PULSE_FIELDS = Array.from({ length: 8 }, (_, index) => ({
@@ -878,15 +879,29 @@ export function isInfraPhasedLoanAfterFinalPulse(product, year, constructionYear
   return relativeYear > getInfraPhasedLoanFinalPulseYear(product);
 }
 
-export function getInfraProductRepayment(openingOutstanding, product, year, projectYears, repaymentStartYear) {
+export function getInfraProductLoanEndYear(product, projectYears, constructionYears = 0, rampUpYears = 0) {
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+  const termYears = Math.max(1, Math.round(Number(product.termYears) || projectYears));
+  return Math.min(projectYears, stageStartYear + termYears - 1);
+}
+
+export function isInfraPhasedLoanFrameAmortizing(product, year, constructionYears = 0, rampUpYears = 0) {
+  const finalPulseYear = getInfraPhasedLoanFinalPulseYear(product);
+  if (finalPulseYear <= 0) return true;
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+  const relativeYear = year - stageStartYear + 1;
+  return relativeYear >= finalPulseYear;
+}
+
+export function getInfraProductRepayment(openingOutstanding, product, year, projectYears, repaymentStartYear, constructionYears = 0, rampUpYears = 0) {
   const type = product.amortizationType || "equalPrincipal";
   if (!INFRA_PRODUCT_TYPES[product.productType]?.isLoan) return 0;
   if (openingOutstanding <= 0) return 0;
 
-  const termYears = Math.max(1, Math.round(Number(product.termYears) || projectYears));
-  const loanEndYear = Math.min(projectYears, termYears);
+  const loanEndYear = getInfraProductLoanEndYear(product, projectYears, constructionYears, rampUpYears);
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
   const graceYears = Math.max(0, Math.round(Number(product.graceYears) || 0));
-  const effectiveRepaymentStartYear = type === "grace" ? Math.min(projectYears, graceYears + 1) : repaymentStartYear;
+  const effectiveRepaymentStartYear = type === "grace" ? Math.min(projectYears, stageStartYear + graceYears) : repaymentStartYear;
 
   if (year < effectiveRepaymentStartYear) return 0;
   if (type === "balloon") return year >= loanEndYear ? openingOutstanding : 0;
@@ -954,6 +969,15 @@ export function getInfraGuaranteeFacilityPct(product, year, constructionYears = 
 }
 
 export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYears, rampUpYears, projectYears) {
+  const normalizeFeeTiming = (fee, config) => {
+    const timing = fee.timing || config.timing || "oneTimeFirstYear";
+    if (timing === "year1") return "oneTimeFirstYear";
+    if (timing === "construction") return "constructionAnnual";
+    if (timing === "operation") return "fullProjectAnnual";
+    if (timing === "spread") return "oneTimeFirstYear";
+    return timing;
+  };
+
   const rows = (fees || []).map((fee) => {
     const config = INFRA_FEE_TYPES[fee.feeType] || INFRA_FEE_TYPES.arrangement;
     const rawAmount = Math.max(0, Number(fee.amount) || 0);
@@ -962,11 +986,12 @@ export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYea
     const resolvedAmount = amountMode === "pct" ? feeBaseAmount * (rawPct / 100) : rawAmount;
     const resolvedPct = feeBaseAmount > 0 ? (resolvedAmount / feeBaseAmount) * 100 : rawPct;
     const spreadYears = Math.max(1, Math.round(Number(fee.spreadYears) || 1));
+    const timing = normalizeFeeTiming(fee, config);
 
     return {
       ...fee,
-      label: config.label,
-      timing: config.timing,
+      label: fee.label || fee.name || config.label,
+      timing,
       amountMode,
       amount: resolvedAmount,
       pct: resolvedPct,
@@ -977,10 +1002,11 @@ export function calculateInfrastructureFees(fees, feeBaseAmount, constructionYea
   const incomeByYear = Array.from({ length: projectYears }, (_, index) => {
     const year = index + 1;
     return rows.reduce((sum, fee) => {
-      if (fee.timing === "year1") return sum + (year === 1 ? fee.amount : 0);
+      if (fee.timing === "oneTimeFirstYear") return sum + (year === 1 ? fee.amount : 0);
       if (fee.timing === "spread") return sum + (year <= fee.spreadYears ? fee.amount / fee.spreadYears : 0);
-      if (fee.timing === "construction") return sum + (year <= constructionYears ? fee.amount : 0);
-      if (fee.timing === "operation") return sum + (year > constructionYears + rampUpYears ? fee.amount : 0);
+      if (fee.timing === "fullProjectAnnual") return sum + fee.amount;
+      if (fee.timing === "constructionAnnual") return sum + (year <= constructionYears ? fee.amount : 0);
+      if (fee.timing === "rampUpAnnual") return sum + (year > constructionYears && year <= constructionYears + rampUpYears ? fee.amount : 0);
       return sum;
     }, 0);
   });
@@ -1037,12 +1063,16 @@ export function calculateInfrastructureProjectForecast(input) {
     let yearOutstanding = 0;
     let yearAverageOutstanding = 0;
     let yearUndrawn = 0;
+    let yearTotalExposure = 0;
     let projectOutstanding = 0;
     let projectAverageOutstanding = 0;
     let projectUndrawn = 0;
+    let projectTotalExposure = 0;
     let interestIncome = 0;
     let feeIncome = 0;
+    let undrawnInterestIncome = 0;
     let ead = 0;
+    const productDetails = [];
 
     products.forEach((product) => {
       const rule = INFRA_PRODUCT_TYPES[product.productType] || INFRA_PRODUCT_TYPES.infraLongTermLoan;
@@ -1071,7 +1101,7 @@ export function calculateInfrastructureProjectForecast(input) {
       const loanCommitmentAmount = rule.isLoan && !rule.isPhasedLoan ? amountIls * loanUtilizationPct : amountIls;
       const drawdown = rule.isLoan ? loanCommitmentAmount * getInfraProductDrawdownPct(product, year, constructionYears, rampUpYears) : 0;
       const beforeRepayment = Math.min(loanCommitmentAmount, opening + drawdown);
-      const repayment = getInfraProductRepayment(beforeRepayment, product, year, years, repaymentStartYear);
+      const repayment = getInfraProductRepayment(beforeRepayment, product, year, years, repaymentStartYear, constructionYears, rampUpYears);
       const closing = Math.max(0, beforeRepayment - repayment);
       balances[product.id] = closing;
 
@@ -1079,40 +1109,76 @@ export function calculateInfrastructureProjectForecast(input) {
       const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : nonLoanExposureApplies ? amountIls : 0;
       const ccf = Math.max(0, Number(product.ccf ?? rule.defaultCcf) || 0) / 100;
       const ccfUndrawn = Math.max(0, Number(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 0) || 0) / 100;
-      const phasedLoanAfterFinalPulse = rule.isPhasedLoan ? isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears, rampUpYears) : false;
+      const loanEndYear = rule.isLoan ? getInfraProductLoanEndYear(product, years, constructionYears, rampUpYears) : 0;
+      const loanFacilityActive = rule.isLoan && year < loanEndYear;
+      const phasedLoanFrameAmortizing = rule.isPhasedLoan ? isInfraPhasedLoanFrameAmortizing(product, year, constructionYears, rampUpYears) : false;
       const loanFrameForRwa =
         rule.isPhasedLoan
-          ? phasedLoanAfterFinalPulse ? averageOutstanding : amountIls
-          : loanFacilityMode === "facility" ? amountIls : averageOutstanding;
-      const averageUndrawn = rule.isLoan ? Math.max(0, loanFrameForRwa - averageOutstanding) : 0;
-      const productEad = rule.isGuaranteeFacility
+          ? phasedLoanFrameAmortizing ? closing : amountIls
+          : loanFacilityMode === "facility" && loanFacilityActive ? amountIls : closing;
+      const averageUndrawn = rule.isLoan && loanFacilityActive ? Math.max(0, loanFrameForRwa - averageOutstanding) : 0;
+      const productUndrawn = rule.isGuaranteeFacility
+        ? guaranteeFacilityUndrawn
+        : rule.isLoan && loanFacilityActive
+          ? Math.max(0, loanFrameForRwa - closing)
+          : 0;
+      const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
+      const productTotalExposure = productOutstanding + productUndrawn;
+      const rawProductEad = rule.isGuaranteeFacility
         ? guaranteeFacilityUtilized * ccf + guaranteeFacilityUndrawn * ccfUndrawn
         : rule.isLoan
         ? averageOutstanding * ccf + averageUndrawn * ccfUndrawn
         : guaranteeExposure * ccf;
+      const productEad = Math.min(rawProductEad, productTotalExposure);
       const rate = Math.max(0, Number(product.rate) || 0) / 100;
+      const defaultUndrawnRate = Math.max(0, Number(product.rate) || 0) / 3;
+      const defaultUndrawnCustomerRate = Math.max(0, Number(product.customerRate || product.rate) || 0) / 3;
+      const undrawnRatePct = Math.max(0, Number(product.undrawnRate ?? defaultUndrawnRate) || 0);
+      const undrawnCustomerRatePct = Math.max(0, Number(product.undrawnCustomerRate ?? defaultUndrawnCustomerRate) || 0);
+      const undrawnIncome = rule.isLoan && productUndrawn > 0 ? productUndrawn * (undrawnRatePct / 100) : 0;
       let productIncome = 0;
       if (rule.incomeMode === "interest") {
-        productIncome = averageOutstanding * rate;
+        productIncome = averageOutstanding * rate + undrawnIncome;
       } else {
         productIncome = nonLoanExposureApplies ? (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure) * rate : 0;
       }
 
-      const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityLimit : guaranteeExposure);
-      const productUndrawn = rule.isGuaranteeFacility ? guaranteeFacilityUndrawn : rule.isLoan ? Math.max(0, loanFrameForRwa - closing) : 0;
+      const productAverageOutstanding = averageOutstanding + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
+      productDetails.push({
+        productId: product.id,
+        productName: product.name || rule.label,
+        productType: product.productType,
+        productTypeLabel: rule.label,
+        stage: product.stage || "construction",
+        lenderType: product.lenderType || "bank",
+        isBankFunded,
+        outstanding: productOutstanding,
+        averageOutstanding: productAverageOutstanding,
+        undrawn: productUndrawn,
+        totalExposure: productTotalExposure,
+        ead: productEad,
+        income: isBankFunded ? productIncome : 0,
+        interestIncome: isBankFunded && rule.incomeMode === "interest" ? productIncome : 0,
+        feeIncome: isBankFunded && rule.incomeMode === "feeRate" ? productIncome : 0,
+        undrawnIncome: isBankFunded ? undrawnIncome : 0,
+        undrawnRatePct,
+        undrawnCustomerRatePct,
+      });
 
       projectOutstanding += productOutstanding;
       projectAverageOutstanding += productAverageOutstanding;
       projectUndrawn += productUndrawn;
+      projectTotalExposure += productTotalExposure;
 
       if (isBankFunded) {
         yearDrawdown += drawdown;
         yearOutstanding += productOutstanding;
         yearAverageOutstanding += productAverageOutstanding;
         yearUndrawn += productUndrawn;
+        yearTotalExposure += productTotalExposure;
         interestIncome += rule.incomeMode === "interest" ? productIncome : 0;
         feeIncome += rule.incomeMode === "feeRate" ? productIncome : 0;
+        undrawnInterestIncome += undrawnIncome;
         ead += productEad;
       }
     });
@@ -1135,8 +1201,8 @@ export function calculateInfrastructureProjectForecast(input) {
     const discountedIncome = nominalIncome / Math.pow(1 + discountRate / 100, Math.max(0, year - 1));
     const totalIncome = nominalIncome;
 
-    const bankShareLimitExceeded = bankShareAmount > 0 && yearOutstanding > bankShareAmount;
-    const bankShareExcess = bankShareLimitExceeded ? yearOutstanding - bankShareAmount : 0;
+    const bankShareLimitExceeded = bankShareAmount > 0 && yearTotalExposure > bankShareAmount;
+    const bankShareExcess = bankShareLimitExceeded ? yearTotalExposure - bankShareAmount : 0;
 
     return {
       year,
@@ -1145,6 +1211,8 @@ export function calculateInfrastructureProjectForecast(input) {
       drawdown: yearDrawdown,
       outstanding: yearOutstanding,
       projectOutstanding,
+      totalExposure: yearTotalExposure,
+      projectTotalExposure,
       bankShareLimit: bankShareAmount,
       bankShareLimitExceeded,
       bankShareExcess,
@@ -1166,12 +1234,14 @@ export function calculateInfrastructureProjectForecast(input) {
       commitmentIncome: 0,
       feeIncome: totalFeeIncome,
       productFeeIncome: feeIncome,
+      undrawnInterestIncome,
       projectFeeIncome,
       additionalIncome,
       totalIncome,
       discountedIncome,
       rwa,
       returnOnRwa: rwa > 0 ? (totalIncome / rwa) * 100 : 0,
+      productDetails,
     };
   });
 
@@ -1182,8 +1252,8 @@ export function calculateInfrastructureProjectForecast(input) {
   const averageAnnualIncome = totalIncome / years;
   const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / years;
   const averageReturnOnRwa = averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0;
-  const peakExposure = rows.reduce((max, row) => Math.max(max, row.outstanding), 0);
-  const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectOutstanding), 0);
+  const peakExposure = rows.reduce((max, row) => Math.max(max, row.totalExposure), 0);
+  const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectTotalExposure), 0);
   const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
   const bankShareLimitBreaches = rows.filter((row) => row.bankShareLimitExceeded);
   const maxBankShareExcess = rows.reduce((max, row) => Math.max(max, row.bankShareExcess || 0), 0);
@@ -1215,8 +1285,8 @@ export function calculateInfrastructureProjectForecast(input) {
     depositMargin,
     annualDepositIncome,
     feeAnalysis,
-    annualProjectManagementFee: feeAnalysis.rows.filter((row) => row.feeType === "constructionAnnual" || row.feeType === "operationAnnual").reduce((sum, row) => sum + row.amount, 0),
-    oneTimeFee: feeAnalysis.rows.filter((row) => row.timing === "year1").reduce((sum, row) => sum + row.amount, 0),
+    annualProjectManagementFee: feeAnalysis.rows.filter((row) => row.timing === "constructionAnnual" || row.timing === "rampUpAnnual" || row.timing === "fullProjectAnnual").reduce((sum, row) => sum + row.amount, 0),
+    oneTimeFee: feeAnalysis.rows.filter((row) => row.timing === "oneTimeFirstYear").reduce((sum, row) => sum + row.amount, 0),
     annualFixedFeeEnabled: false,
     annualFixedFee: 0,
     recurringAdditionalIncome: annualDepositIncome + otherIncome + (feeAnalysis.incomeByYear[0] || 0),
