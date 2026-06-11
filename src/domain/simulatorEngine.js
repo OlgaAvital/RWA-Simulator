@@ -879,15 +879,29 @@ export function isInfraPhasedLoanAfterFinalPulse(product, year, constructionYear
   return relativeYear > getInfraPhasedLoanFinalPulseYear(product);
 }
 
-export function getInfraProductRepayment(openingOutstanding, product, year, projectYears, repaymentStartYear) {
+export function getInfraProductLoanEndYear(product, projectYears, constructionYears = 0, rampUpYears = 0) {
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+  const termYears = Math.max(1, Math.round(Number(product.termYears) || projectYears));
+  return Math.min(projectYears, stageStartYear + termYears - 1);
+}
+
+export function isInfraPhasedLoanFrameAmortizing(product, year, constructionYears = 0, rampUpYears = 0) {
+  const finalPulseYear = getInfraPhasedLoanFinalPulseYear(product);
+  if (finalPulseYear <= 0) return true;
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
+  const relativeYear = year - stageStartYear + 1;
+  return relativeYear >= finalPulseYear;
+}
+
+export function getInfraProductRepayment(openingOutstanding, product, year, projectYears, repaymentStartYear, constructionYears = 0, rampUpYears = 0) {
   const type = product.amortizationType || "equalPrincipal";
   if (!INFRA_PRODUCT_TYPES[product.productType]?.isLoan) return 0;
   if (openingOutstanding <= 0) return 0;
 
-  const termYears = Math.max(1, Math.round(Number(product.termYears) || projectYears));
-  const loanEndYear = Math.min(projectYears, termYears);
+  const loanEndYear = getInfraProductLoanEndYear(product, projectYears, constructionYears, rampUpYears);
+  const stageStartYear = getInfraProductStageStartYear(product, constructionYears, rampUpYears);
   const graceYears = Math.max(0, Math.round(Number(product.graceYears) || 0));
-  const effectiveRepaymentStartYear = type === "grace" ? Math.min(projectYears, graceYears + 1) : repaymentStartYear;
+  const effectiveRepaymentStartYear = type === "grace" ? Math.min(projectYears, stageStartYear + graceYears) : repaymentStartYear;
 
   if (year < effectiveRepaymentStartYear) return 0;
   if (type === "balloon") return year >= loanEndYear ? openingOutstanding : 0;
@@ -1087,7 +1101,7 @@ export function calculateInfrastructureProjectForecast(input) {
       const loanCommitmentAmount = rule.isLoan && !rule.isPhasedLoan ? amountIls * loanUtilizationPct : amountIls;
       const drawdown = rule.isLoan ? loanCommitmentAmount * getInfraProductDrawdownPct(product, year, constructionYears, rampUpYears) : 0;
       const beforeRepayment = Math.min(loanCommitmentAmount, opening + drawdown);
-      const repayment = getInfraProductRepayment(beforeRepayment, product, year, years, repaymentStartYear);
+      const repayment = getInfraProductRepayment(beforeRepayment, product, year, years, repaymentStartYear, constructionYears, rampUpYears);
       const closing = Math.max(0, beforeRepayment - repayment);
       balances[product.id] = closing;
 
@@ -1095,16 +1109,18 @@ export function calculateInfrastructureProjectForecast(input) {
       const guaranteeExposure = rule.isGuaranteeFacility ? guaranteeFacilityUtilized : rule.isLoan ? 0 : nonLoanExposureApplies ? amountIls : 0;
       const ccf = Math.max(0, Number(product.ccf ?? rule.defaultCcf) || 0) / 100;
       const ccfUndrawn = Math.max(0, Number(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 0) || 0) / 100;
-      const phasedLoanAfterFinalPulse = rule.isPhasedLoan ? isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears, rampUpYears) : false;
+      const loanEndYear = rule.isLoan ? getInfraProductLoanEndYear(product, years, constructionYears, rampUpYears) : 0;
+      const loanFacilityActive = rule.isLoan && year < loanEndYear;
+      const phasedLoanFrameAmortizing = rule.isPhasedLoan ? isInfraPhasedLoanFrameAmortizing(product, year, constructionYears, rampUpYears) : false;
       const loanFrameForRwa =
         rule.isPhasedLoan
-          ? phasedLoanAfterFinalPulse ? closing : amountIls
-          : loanFacilityMode === "facility" ? amountIls : closing;
-      const averageUndrawn = rule.isLoan ? Math.max(0, loanFrameForRwa - averageOutstanding) : 0;
+          ? phasedLoanFrameAmortizing ? closing : amountIls
+          : loanFacilityMode === "facility" && loanFacilityActive ? amountIls : closing;
+      const averageUndrawn = rule.isLoan && loanFacilityActive ? Math.max(0, loanFrameForRwa - averageOutstanding) : 0;
       const productUndrawn = rule.isGuaranteeFacility
         ? guaranteeFacilityUndrawn
-        : rule.isLoan
-          ? phasedLoanAfterFinalPulse ? 0 : Math.max(0, loanFrameForRwa - closing)
+        : rule.isLoan && loanFacilityActive
+          ? Math.max(0, loanFrameForRwa - closing)
           : 0;
       const productOutstanding = closing + (rule.isGuaranteeFacility ? guaranteeFacilityUtilized : guaranteeExposure);
       const productTotalExposure = productOutstanding + productUndrawn;
