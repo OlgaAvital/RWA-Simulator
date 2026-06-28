@@ -109,11 +109,11 @@ export default function RwaReturnSimulator() {
   const [isInfraSecuritiesModalOpen, setIsInfraSecuritiesModalOpen] = useState(false);
   const [isInfraFeesModalOpen, setIsInfraFeesModalOpen] = useState(false);
   const [infraFees, setInfraFees] = useState([
-    { id: 1, feeType: "arrangement", amountMode: "pct", pct: 0.4, amount: 0, spreadYears: 1 },
-    { id: 2, feeType: "upfront1", amountMode: "amount", pct: 0, amount: 0, spreadYears: 3 },
-    { id: 3, feeType: "upfront2", amountMode: "amount", pct: 0, amount: 0, spreadYears: 5 },
-    { id: 4, feeType: "constructionAnnual", amountMode: "pct", pct: 0.1, amount: 0, spreadYears: 1 },
-    { id: 5, feeType: "operationAnnual", amountMode: "pct", pct: 0.05, amount: 0, spreadYears: 1 },
+    { id: 1, label: "עמלת ארגון", timing: "oneTimeFirstYear", amountMode: "pct", pct: 0.4, amount: 0, spreadYears: 1 },
+    { id: 2, label: "UP FRONT 1", timing: "oneTimeFirstYear", amountMode: "amount", pct: 0, amount: 0, spreadYears: 1 },
+    { id: 3, label: "UP FRONT 2", timing: "oneTimeFirstYear", amountMode: "amount", pct: 0, amount: 0, spreadYears: 1 },
+    { id: 4, label: "עמלת פרויקט בתקופת הקמה", timing: "constructionAnnual", amountMode: "pct", pct: 0.1, amount: 0, spreadYears: 1 },
+    { id: 5, label: "עמלת פרויקט לאורך חיי הפרויקט", timing: "fullProjectAnnual", amountMode: "pct", pct: 0.05, amount: 0, spreadYears: 1 },
   ]);
   const [infraProducts, setInfraProducts] = useState([
     {
@@ -1045,6 +1045,7 @@ export default function RwaReturnSimulator() {
             setRampUpYears={setInfraRampUpYears}
             projectCurrency={infraProjectCurrency}
             setProjectCurrency={setInfraProjectCurrency}
+            projectTotalScope={infraProjectTotalScope}
             feeBaseAmount={infrastructureForecast.bankShareAmount}
             setProjectTotalScope={setInfraProjectTotalScope}
             bankSharePct={infraBankSharePct}
