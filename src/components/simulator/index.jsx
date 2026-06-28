@@ -2437,7 +2437,9 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
         name: rule.label,
         productType,
         amount: 0,
+        limit: 0,
         margin: productType === "mezzanineLoan" ? 7.5 : 3.2,
+        customerInterest: productType === "mezzanineLoan" ? 7.5 : 3.2,
         ccfUndrawn: rule.defaultCcfUndrawn,
         riskWeight: rule.defaultRiskWeight,
         repaymentPriority: rule.isMezzanine ? 2 : 1,
@@ -2480,9 +2482,9 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                 <th className="p-3 text-right">שם</th>
                 <th className="p-3 text-right">סוג</th>
                 <th className="p-3 text-right">מסגרת</th>
-                <th className="p-3 text-right">מרווח</th>
-                <th className="p-3 text-right">RWA %</th>
-                <th className="p-3 text-right">CCF לא מנוצל</th>
+                <th className="p-3 text-right">ניצול/שחרור צפוי</th>
+                <th className="p-3 text-right">מרווח/עמלה</th>
+                <th className="p-3 text-right">ריבית ללקוח</th>
                 <th className="p-3 text-right">עדיפות פירעון</th>
                 {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
                 <th className="p-3 text-right">סה״כ שחרורים</th>
@@ -2503,10 +2505,10 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                         {Object.entries(CONSTRUCTION_CREDIT_PRODUCT_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
                       </select>
                     </td>
+                    <td className="p-3"><NumberCell value={product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell value={product.riskWeight ?? rule.defaultRiskWeight} onChange={(v) => updateProduct(product.id, "riskWeight", clampNumber(v, 0, 300))} /></td>
-                    <td className="p-3"><NumberCell value={product.ccfUndrawn ?? rule.defaultCcfUndrawn} onChange={(v) => updateProduct(product.id, "ccfUndrawn", clampNumber(v, 0, 100))} /></td>
+                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} /></td>
                     <td className="p-3"><NumberCell value={product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)} onChange={(v) => updateProduct(product.id, "repaymentPriority", clampNumber(v, 1, 9))} step="1" /></td>
                     {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => (
                       <td key={field} className="p-3">
@@ -2559,34 +2561,12 @@ export function ConstructionProjectPanel({
   setBankSharePct,
   loanMargin,
   setLoanMargin,
-  guaranteeFeeRate,
-  setGuaranteeFeeRate,
-  saleLawGuaranteeFeeRate,
-  setSaleLawGuaranteeFeeRate,
-  accountManagementFee,
-  setAccountManagementFee,
   setupFeePct,
   setSetupFeePct,
   projectManagementFee,
   setProjectManagementFee,
   legalAndControlFees,
   setLegalAndControlFees,
-  completionGuaranteeLimit,
-  setCompletionGuaranteeLimit,
-  landRiskWeight,
-  setLandRiskWeight,
-  constructionRiskWeight,
-  setConstructionRiskWeight,
-  saleLawGuaranteeCcf,
-  setSaleLawGuaranteeCcf,
-  guaranteeCcf,
-  setGuaranteeCcf,
-  undrawnLoanCcf,
-  setUndrawnLoanCcf,
-  saleLawGuaranteeFinalCcf,
-  setSaleLawGuaranteeFinalCcf,
-  saleLawGuaranteeReductionStartPct,
-  setSaleLawGuaranteeReductionStartPct,
   onOpenCreditProducts,
   onOpenCollaterals,
 }) {
@@ -2622,8 +2602,8 @@ export function ConstructionProjectPanel({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-orange-100 bg-orange-50 p-4 xl:col-span-2">
-            <h3 className="mb-4 font-semibold text-orange-900">מסגרות אשראי ועמלות</h3>
+          <div className="rounded-3xl border border-orange-100 bg-orange-50 p-4">
+            <h3 className="mb-4 font-semibold text-orange-900">מוצרי אשראי בפרויקט</h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-2xl bg-white p-3 md:col-span-2 xl:col-span-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -2660,30 +2640,29 @@ export function ConstructionProjectPanel({
                   <ReadOnlyBox title="חיסכון RWA מביטוח" value={formatK(forecast.totalInsuranceRwaSaving || 0)} tone="green" />
                 </div>
               </div>
-              <MetricInput label="ערבויות ביצוע/טיב, ₪k" value={completionGuaranteeLimit} setValue={setCompletionGuaranteeLimit} min={0} max={5000000} step={100} />
-              <MetricInput label="מרווח הלוואות, %" value={loanMargin} setValue={setLoanMargin} min={0} max={20} step={0.1} />
-              <MetricInput label="עמלת ערבויות, %" value={guaranteeFeeRate} setValue={setGuaranteeFeeRate} min={0} max={10} step={0.1} />
-              <MetricInput label="עמלת חוק מכר, %" value={saleLawGuaranteeFeeRate} setValue={setSaleLawGuaranteeFeeRate} min={0} max={10} step={0.1} />
-              <MetricInput label="עמלת אי ניצול, % מהמסגרות הלא מנוצלות" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
-              <MetricInput label="עמלת ניהול פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
-              <MetricInput label="ניהול חשבון שנתי, ₪k" value={accountManagementFee} setValue={setAccountManagementFee} min={0} max={50000} step={10} />
-              <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
             </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-4 font-semibold text-slate-800">טבלת משקלי סיכון / RWA</h3>
+            <h3 className="mb-4 font-semibold text-slate-800">הכנסות נוספות</h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-              <MetricInput label="משקל סיכון קרקע, %" value={landRiskWeight} setValue={setLandRiskWeight} min={0} max={250} step={5} />
-              <MetricInput label="משקל סיכון בניה, %" value={constructionRiskWeight} setValue={setConstructionRiskWeight} min={0} max={250} step={5} />
-              <MetricInput label="CCF חוק מכר בתחילת מכירות, %" value={saleLawGuaranteeCcf} setValue={setSaleLawGuaranteeCcf} min={0} max={100} step={5} />
-              <MetricInput label="CCF חוק מכר בסוף פרויקט, %" value={saleLawGuaranteeFinalCcf} setValue={setSaleLawGuaranteeFinalCcf} min={0} max={100} step={5} help="נתון פרמטרי עד לאישור המספר המדויק; המודל מפחית את ה־CCF בהדרגה לקראת סוף הפרויקט." />
-              <MetricInput label="תחילת הפחתת CCF חוק מכר, % מכירות" value={saleLawGuaranteeReductionStartPct} setValue={setSaleLawGuaranteeReductionStartPct} min={0} max={100} step={5} />
-              <MetricInput label="CCF ערבויות אחרות, %" value={guaranteeCcf} setValue={setGuaranteeCcf} min={0} max={100} step={5} />
-              <MetricInput label="CCF מסגרת לא מנוצלת, %" value={undrawnLoanCcf} setValue={setUndrawnLoanCcf} min={0} max={100} step={5} />
+              <MetricInput label="עמלת אי ניצול, % מהמסגרות הלא מנוצלות" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
+              <MetricInput label="עמלת ניהול פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
+              <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
+            <h3 className="mb-4 font-semibold text-emerald-900">תוצאות ניהוליות</h3>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
+              <ReadOnlyBox title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
+              <ReadOnlyBox title="ערך פרויקט / מכירות" value={`${forecast.projectValueToSalesPct.toFixed(1)}%`} />
+              <ReadOnlyBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
+              <ReadOnlyBox title="תשואה ממוצעת ל־RWA" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} tone="green" />
             </div>
           </div>
         </div>
+
           <div className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50 p-4">
             <h3 className="mb-3 font-semibold text-indigo-900">תרחישים</h3>
             <div className="grid gap-3 md:grid-cols-3">
@@ -2693,7 +2672,7 @@ export function ConstructionProjectPanel({
                   {Object.entries(CONSTRUCTION_SALES_SCENARIOS).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
                 </select>
               </label>
-              <MetricInput label="עיכוב בבנייה, חודשים" value={constructionDelayMonths} setValue={setConstructionDelayMonths} min={0} max={120} step={1} />
+              <MetricInput label="עיכוב בבנייה, חודשים" value={constructionDelayMonths} setValue={setConstructionDelayMonths} min={0} max={24} step={1} />
             </div>
           </div>
       </Panel>
@@ -2704,8 +2683,8 @@ export function ConstructionProjectPanel({
           <div className="grid gap-3 md:grid-cols-2">
             <SummaryBox title="רווח יזמי גולמי" value={`${formatK(forecast.grossProfit)} (${forecast.grossMarginPct.toFixed(1)}%)`} positive={forecast.grossProfit >= 0} />
             <SummaryBox title="שיא ניצול הלוואות" value={formatK(forecast.peakLoanOutstanding)} />
-            <SummaryBox title="LTV לפני מזנין" value={`${forecast.ltvBeforeMezzanine.toFixed(1)}%`} />
-            <SummaryBox title="LTV אחרי מזנין" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} warning={forecast.ltvAfterMezzanine > forecast.ltvBeforeMezzanine} />
+            <SummaryBox title="ערך פרויקט / מכירות" value={`${forecast.projectValueToSalesPct.toFixed(1)}%`} />
+            <SummaryBox title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
             <SummaryBox title="שיא ערבויות חוק מכר" value={formatK(forecast.peakSaleLawGuarantees)} />
             <SummaryBox title="שיא EAD" value={formatK(forecast.peakEad)} />
             <SummaryBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />

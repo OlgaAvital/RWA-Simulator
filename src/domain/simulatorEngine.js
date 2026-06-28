@@ -1726,6 +1726,7 @@ export const CONSTRUCTION_SALES_SCENARIOS = {
   linear: { label: "מכירות לינאריות בפרויקט" },
   backLoaded: { label: "מכירות אקספוננציאליות — מתחיל לאט ומתגבר בסוף" },
   frontLoaded: { label: "מכירות מתחילות מהר ומאטות בהמשך" },
+  exitAfterLand: { label: "הלקוח לא ממשיך ליווי בבנק ופורע בסוף תקופת הקרקע" },
 };
 
 export const CONSTRUCTION_CREDIT_PRODUCT_TYPES = {
@@ -1775,7 +1776,9 @@ export function createDefaultConstructionCreditProducts({ totalCost = 0, landCos
       name: "הלוואת קרקע",
       productType: "landLoan",
       amount: landFacility,
+      limit: landFacility,
       margin: 3.2,
+      customerInterest: 3.2,
       ccfUndrawn: 0,
       riskWeight: 100,
       repaymentPriority: 1,
@@ -1785,7 +1788,9 @@ export function createDefaultConstructionCreditProducts({ totalCost = 0, landCos
       name: "הלוואת בניה בכירה",
       productType: "seniorConstruction",
       amount: constructionFacility,
+      limit: constructionFacility,
       margin: 3.2,
+      customerInterest: 3.2,
       ccfUndrawn: 0,
       riskWeight: 100,
       repaymentPriority: 1,
@@ -1807,7 +1812,9 @@ export function createDefaultConstructionCreditProducts({ totalCost = 0, landCos
       name: "הלוואת מזנין",
       productType: "mezzanineLoan",
       amount: 0,
+      limit: 0,
       margin: 7.5,
+      customerInterest: 7.5,
       ccfUndrawn: 0,
       riskWeight: 100,
       balloonAtEnd: true,
@@ -1833,7 +1840,7 @@ export function calculateConstructionProjectForecast(input = {}) {
   const constructionMonths = clampNumber(input.constructionMonths ?? 36, 1, 96);
   const finalMonths = clampNumber(input.finalMonths ?? 6, 0, 36);
   const salesScenario = input.salesScenario || "linear";
-  const constructionDelayMonths = clampNumber(input.constructionDelayMonths ?? 0, 0, 120);
+  const constructionDelayMonths = clampNumber(input.constructionDelayMonths ?? 0, 0, 24);
   const activeConstructionMonths = constructionMonths + constructionDelayMonths;
   const totalMonths = Math.max(1, Math.round(landMonths + activeConstructionMonths + finalMonths));
   const totalCost = Math.max(0, Number(input.totalCost) || 0);
@@ -1866,7 +1873,9 @@ export function calculateConstructionProjectForecast(input = {}) {
       productType: product.productType || "seniorConstruction",
       name: product.name || rule.label,
       amount: Math.max(0, Number(product.amount) || 0),
+      limit: Math.max(0, Number(product.limit ?? product.amount) || 0),
       margin: Math.max(0, Number(product.margin ?? loanMargin) || 0),
+      customerInterest: Math.max(0, Number(product.customerInterest ?? product.margin ?? loanMargin) || 0),
       ccfUndrawn: clampNumber(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 40, 0, 100),
       riskWeight: Math.max(0, Number(product.riskWeight ?? rule.defaultRiskWeight ?? constructionRiskWeight) || 0),
       balloonAtEnd: product.balloonAtEnd ?? rule.defaultBalloonAtEnd ?? false,
@@ -1874,21 +1883,22 @@ export function calculateConstructionProjectForecast(input = {}) {
       id: product.id ?? index + 1,
     };
   });
-  const totalLoanFacility = creditProducts.filter((product) => (CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {}).isLoan !== false).reduce((sum, product) => sum + product.amount, 0);
+  const totalLoanFacility = creditProducts.filter((product) => (CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {}).isLoan !== false).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0);
   const totalProjectFrame = Math.max(totalCost, creditProducts.reduce((sum, product) => sum + product.amount, 0));
   const landLoanFacility = creditProducts.filter((product) => (CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {}).stage === "land").reduce((sum, product) => sum + product.amount, 0);
   const mezzanineFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isMezzanine).reduce((sum, product) => sum + product.amount, 0);
   const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility - mezzanineFacility);
   const seniorLoanFacility = Math.max(0, totalLoanFacility - mezzanineFacility);
-  const saleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + product.amount, 0) || expectedRevenue * (bankSharePct / 100);
+  const saleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0) || expectedRevenue * (bankSharePct / 100);
   const setupFee = 0;
-  const monthlyAccountFee = accountManagementFee / 12;
+  const monthlyAccountFee = 0;
   const monthlyControlFee = legalAndControlFees / 12;
   const monthlyProjectManagementFee = Math.max(0, Number(input.projectManagementFee) || 0) / 12;
   const scenarioSalesPct = (elapsed, duration) => {
     const t = duration > 0 ? clampNumber(elapsed / duration, 0, 1) : 1;
     if (salesScenario === "backLoaded") return t * t;
     if (salesScenario === "frontLoaded") return 1 - ((1 - t) * (1 - t));
+    if (salesScenario === "exitAfterLand") return 0;
     return t;
   };
   const collateralAnalysis = calculateConstructionCollateralAnalysis(input.collaterals || []);
@@ -1899,14 +1909,16 @@ export function calculateConstructionProjectForecast(input = {}) {
   const rows = Array.from({ length: totalMonths }, (_, index) => {
     const month = index + 1;
     const isLand = month <= landMonths;
+    const isExitAfterLand = salesScenario === "exitAfterLand";
     const isFinal = month > landMonths + activeConstructionMonths;
-    const stage = isLand ? "קרקע" : isFinal ? "אכלוס/סוף פרויקט" : "בניה";
+    const stage = isLand ? "קרקע" : isExitAfterLand ? "פירעון בסוף קרקע" : isFinal ? "אכלוס/סוף פרויקט" : "בניה";
     const elapsedSalesMonths = isLand ? 0 : Math.min(activeConstructionMonths, month - landMonths);
     const targetSales = expectedRevenue * scenarioSalesPct(elapsedSalesMonths, activeConstructionMonths);
     const salesInflow = Math.max(0, targetSales - cumulativeSales);
     cumulativeSales = Math.min(expectedRevenue, targetSales);
     const salesPct = expectedRevenue > 0 ? (cumulativeSales / expectedRevenue) * 100 : 0;
     let remainingSweep = isLand ? 0 : salesInflow * (bankSharePct / 100);
+    if (isExitAfterLand && month === landMonths + 1) remainingSweep = Number.MAX_SAFE_INTEGER;
     let loanDraw = 0;
     let loanOutstanding = 0;
     let avgLoan = 0;
@@ -1920,7 +1932,8 @@ export function calculateConstructionProjectForecast(input = {}) {
 
     creditProducts.forEach((product) => {
       const opening = productOpenings[product.id] || 0;
-      const draw = Math.min(Math.max(0, product.amount - opening), product.amount * getConstructionDrawPct(product, month, landMonths));
+      const drawBase = isExitAfterLand && (CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {}).stage !== "land" ? 0 : product.amount;
+      const draw = Math.min(Math.max(0, drawBase - opening), drawBase * getConstructionDrawPct(product, month, landMonths));
       balances[product.id] = opening + draw;
       loanDraw += draw;
     });
@@ -1933,25 +1946,36 @@ export function calculateConstructionProjectForecast(input = {}) {
       remainingSweep = Math.max(0, remainingSweep - repayment);
     });
 
+    const rawSaleLawGuaranteeOutstanding = isExitAfterLand ? 0 : Math.min(saleLawGuaranteeFacility, cumulativeSales * (bankSharePct / 100));
+    const otherGuaranteeOutstanding = isLand || isExitAfterLand ? 0 : creditProducts.filter((product) => {
+      const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {};
+      return rule.isGuarantee && !rule.isSaleLaw;
+    }).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0);
+    const legacyCompletionGuaranteeOutstanding = isLand || isExitAfterLand ? 0 : completionGuaranteeLimit * (bankSharePct / 100);
+    const completionGuaranteeOutstanding = otherGuaranteeOutstanding || legacyCompletionGuaranteeOutstanding;
+    const saleLawGuaranteeOutstanding = rawSaleLawGuaranteeOutstanding;
+
     creditProducts.forEach((product) => {
       const opening = productOpenings[product.id] || 0;
       const closing = balances[product.id] || 0;
       const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
       const averageOutstanding = (opening + closing) / 2;
-      const productUndrawn = Math.max(0, product.amount - closing);
-      const productEad = (rule.isGuarantee ? 0 : averageOutstanding) + productUndrawn * (product.ccfUndrawn / 100);
+      const nominalLimit = Math.max(product.limit || 0, product.amount || 0);
+      const projectFrameCap = Math.max(0, totalProjectFrame - saleLawGuaranteeOutstanding - completionGuaranteeOutstanding);
+      const cappedLimit = product.productType === "seniorConstruction" ? Math.min(nominalLimit, projectFrameCap) : nominalLimit;
+      const productUndrawn = Math.max(0, cappedLimit - closing);
+      const seniorUndrawnCcf = product.productType === "seniorConstruction" ? configuredRiskWeights.otherGuaranteeUndrawn / 100 : product.ccfUndrawn / 100;
+      const productEad = rule.isGuarantee ? 0 : averageOutstanding + productUndrawn * seniorUndrawnCcf;
       loanEad += productEad;
       loanOutstanding += closing;
       avgLoan += averageOutstanding;
       undrawnLoan += productUndrawn;
-      interestIncome += averageOutstanding * (product.margin / 100) / 12;
+      interestIncome += rule.isGuarantee ? 0 : averageOutstanding * (product.margin / 100) / 12;
       const resolvedProductRw = rule.stage === "land" ? landRiskWeight : rule.isGuarantee && !rule.isSaleLaw ? configuredRiskWeights.otherGuaranteeUtilized : product.riskWeight;
       loanRwa += productEad * (resolvedProductRw / 100);
       weightedRiskNumerator += productEad * product.riskWeight;
     });
 
-    const saleLawGuaranteeOutstanding = Math.min(saleLawGuaranteeFacility, cumulativeSales * (bankSharePct / 100));
-    const completionGuaranteeOutstanding = isLand ? 0 : completionGuaranteeLimit * (bankSharePct / 100);
     const effectiveSaleLawGuaranteeCcf = isFinal ? configuredRiskWeights.saleLawGuaranteeOccupancy / 100 : getSaleLawGuaranteeEffectiveCcf(saleLawGuaranteeCcf, saleLawGuaranteeFinalCcf, saleLawGuaranteeReductionStartPct, salesPct);
     const saleLawGuaranteeEad = saleLawGuaranteeOutstanding * effectiveSaleLawGuaranteeCcf;
     const completionGuaranteeEad = completionGuaranteeOutstanding * guaranteeCcf;
@@ -1968,8 +1992,11 @@ export function calculateConstructionProjectForecast(input = {}) {
     const rwa = Math.max(0, rwaBeforeCreditRiskMitigation - collateralRwaSaving - insuranceRwaSaving);
     const insuranceRwa = insuredEad * (insuranceAnalysis.weightedInsurerRiskWeight / 100);
     const insuranceExpense = insuranceAnalysis.monthlyCost;
-    const guaranteeIncome = completionGuaranteeOutstanding * (guaranteeFeeRate / 100) / 12;
-    const saleLawGuaranteeIncome = saleLawGuaranteeOutstanding * (saleLawGuaranteeFeeRate / 100) / 12;
+    const guaranteeIncome = creditProducts.filter((product) => {
+      const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || {};
+      return rule.isGuarantee && !rule.isSaleLaw;
+    }).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0) * (product.margin / 100) / 12, 0);
+    const saleLawGuaranteeIncome = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + saleLawGuaranteeOutstanding * (product.margin / 100) / 12, 0) || saleLawGuaranteeOutstanding * (saleLawGuaranteeFeeRate / 100) / 12;
     const unusedFrames = Math.max(0, totalProjectFrame - loanOutstanding - saleLawGuaranteeOutstanding - completionGuaranteeOutstanding);
     const unusedFeeIncome = unusedFrames * (setupFeePct / 100) / 12;
     const feeIncome = guaranteeIncome + saleLawGuaranteeIncome + monthlyAccountFee + monthlyControlFee + monthlyProjectManagementFee + unusedFeeIncome;
@@ -2030,6 +2057,8 @@ export function calculateConstructionProjectForecast(input = {}) {
   const grossMarginPct = expectedRevenue > 0 ? (grossProfit / expectedRevenue) * 100 : 0;
   const ltvBeforeMezzanine = expectedRevenue > 0 ? (seniorLoanFacility / expectedRevenue) * 100 : 0;
   const ltvAfterMezzanine = expectedRevenue > 0 ? (totalLoanFacility / expectedRevenue) * 100 : 0;
+  const projectValueToSalesPct = expectedRevenue > 0 ? (totalCost / expectedRevenue) * 100 : 0;
+  const landPeriodLtv = landCost > 0 ? (landLoanFacility / landCost) * 100 : 0;
 
   return {
     rows,
@@ -2074,6 +2103,8 @@ export function calculateConstructionProjectForecast(input = {}) {
     totalInsuranceExpense,
     ltvBeforeMezzanine,
     ltvAfterMezzanine,
+    projectValueToSalesPct,
+    landPeriodLtv,
     regulatoryChecks: CONSTRUCTION_REGULATORY_CHECKS,
   };
 }

@@ -249,7 +249,9 @@ export default function RwaReturnSimulator() {
       name: "הלוואת קרקע",
       productType: "landLoan",
       amount: 105000,
+      limit: 105000,
       margin: 3.2,
+      customerInterest: 3.2,
       ccfUndrawn: 0,
       riskWeight: 100,
       repaymentPriority: 1,
@@ -259,7 +261,9 @@ export default function RwaReturnSimulator() {
       name: "הלוואת בניה בכירה",
       productType: "seniorConstruction",
       amount: 210000,
+      limit: 210000,
       margin: 3.2,
+      customerInterest: 3.2,
       ccfUndrawn: 0,
       riskWeight: 100,
       repaymentPriority: 1,
@@ -281,7 +285,9 @@ export default function RwaReturnSimulator() {
       name: "הלוואת מזנין",
       productType: "mezzanineLoan",
       amount: 0,
+      limit: 0,
       margin: 7.5,
+      customerInterest: 7.5,
       ccfUndrawn: 0,
       riskWeight: 100,
       balloonAtEnd: true,
@@ -1134,34 +1140,12 @@ export default function RwaReturnSimulator() {
             setBankSharePct={setConstructionBankSharePct}
             loanMargin={constructionLoanMargin}
             setLoanMargin={setConstructionLoanMargin}
-            guaranteeFeeRate={constructionGuaranteeFeeRate}
-            setGuaranteeFeeRate={setConstructionGuaranteeFeeRate}
-            saleLawGuaranteeFeeRate={constructionSaleLawGuaranteeFeeRate}
-            setSaleLawGuaranteeFeeRate={setConstructionSaleLawGuaranteeFeeRate}
-            accountManagementFee={constructionAccountManagementFee}
-            setAccountManagementFee={setConstructionAccountManagementFee}
             setupFeePct={constructionSetupFeePct}
             setSetupFeePct={setConstructionSetupFeePct}
             projectManagementFee={constructionProjectManagementFee}
             setProjectManagementFee={setConstructionProjectManagementFee}
             legalAndControlFees={constructionLegalAndControlFees}
             setLegalAndControlFees={setConstructionLegalAndControlFees}
-            completionGuaranteeLimit={constructionCompletionGuaranteeLimit}
-            setCompletionGuaranteeLimit={setConstructionCompletionGuaranteeLimit}
-            landRiskWeight={constructionLandRiskWeight}
-            setLandRiskWeight={setConstructionLandRiskWeight}
-            constructionRiskWeight={constructionBuildRiskWeight}
-            setConstructionRiskWeight={setConstructionBuildRiskWeight}
-            saleLawGuaranteeCcf={constructionSaleLawGuaranteeCcf}
-            setSaleLawGuaranteeCcf={setConstructionSaleLawGuaranteeCcf}
-            guaranteeCcf={constructionGuaranteeCcf}
-            setGuaranteeCcf={setConstructionGuaranteeCcf}
-            undrawnLoanCcf={constructionUndrawnLoanCcf}
-            setUndrawnLoanCcf={setConstructionUndrawnLoanCcf}
-            saleLawGuaranteeFinalCcf={constructionSaleLawGuaranteeFinalCcf}
-            setSaleLawGuaranteeFinalCcf={setConstructionSaleLawGuaranteeFinalCcf}
-            saleLawGuaranteeReductionStartPct={constructionSaleLawGuaranteeReductionStartPct}
-            setSaleLawGuaranteeReductionStartPct={setConstructionSaleLawGuaranteeReductionStartPct}
             onOpenCreditProducts={() => setIsConstructionCreditModalOpen(true)}
             onOpenCollaterals={() => setIsConstructionCollateralModalOpen(true)}
           />
