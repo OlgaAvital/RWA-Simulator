@@ -35,6 +35,7 @@ import {
   CONSTRUCTION_INSURANCE_TYPES,
   CONSTRUCTION_INSURER_RATING_RULES,
   CONSTRUCTION_REGULATORY_CHECKS,
+  CONSTRUCTION_SALES_SCENARIOS,
   calculateInfrastructureFees,
   createDefaultConstructionCreditProducts,
   clampNumber,
@@ -2440,7 +2441,8 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
         ccfUndrawn: rule.defaultCcfUndrawn,
         riskWeight: rule.defaultRiskWeight,
         repaymentPriority: rule.isMezzanine ? 2 : 1,
-        ...Object.fromEntries(CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => [field, 0])),
+        balloonAtEnd: rule.defaultBalloonAtEnd || false,
+        ...Object.fromEntries(CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }, index) => [field, rule.isGuarantee ? 0 : index === 11 ? 8.37 : 8.33])),
       },
     ]);
   };
@@ -2465,6 +2467,8 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => addProduct("seniorConstruction")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ הלוואה בכירה</button>
             <button type="button" onClick={() => addProduct("mezzanineLoan")} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">+ מזנין</button>
+            <button type="button" onClick={() => addProduct("saleLawGuarantee")} className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">+ ערבויות חוק מכר</button>
+            <button type="button" onClick={() => addProduct("performanceGuarantee")} className="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ ערבות ביצוע</button>
             <button type="button" onClick={resetDefault} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">ברירת מחדל</button>
           </div>
         </div>
@@ -2489,6 +2493,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
               {rows.map((product) => {
                 const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
                 const isLand = rule.stage === "land";
+                const isGuarantee = rule.isGuarantee;
                 const drawTotal = CONSTRUCTION_DRAWDOWN_FIELDS.reduce((sum, { field }) => sum + (Number(product[field]) || 0), 0);
                 return (
                   <tr key={product.id} className="border-t align-top">
@@ -2505,10 +2510,12 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                     <td className="p-3"><NumberCell value={product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)} onChange={(v) => updateProduct(product.id, "repaymentPriority", clampNumber(v, 1, 9))} step="1" /></td>
                     {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => (
                       <td key={field} className="p-3">
-                        <NumberCell disabled={isLand} value={isLand ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
+                        <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
+                        {!isLand && !isGuarantee && <div className="text-[11px] text-slate-500">{formatK((Number(product.amount) || 0) * (Number(product[field]) || 0) / 100)}</div>}
+                        </div>
                       </td>
                     ))}
-                    <td className={`p-3 font-bold ${isLand || Math.abs(drawTotal - 100) < 0.5 || drawTotal === 0 ? "text-slate-700" : "text-amber-700"}`}>{isLand ? "מיידי" : `${drawTotal.toFixed(1)}%`}</td>
+                    <td className={`p-3 font-bold ${isLand || Math.abs(drawTotal - 100) < 0.5 || drawTotal === 0 ? "text-slate-700" : "text-amber-700"}`}>{isLand ? "מיידי" : isGuarantee ? "ללא שחרור" : `${drawTotal.toFixed(1)}%`}</td>
                     <td className="p-3"><button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
                   </tr>
                 );
@@ -2534,6 +2541,12 @@ export function ConstructionProjectPanel({
   setLandMonths,
   constructionMonths,
   setConstructionMonths,
+  finalMonths,
+  setFinalMonths,
+  salesScenario,
+  setSalesScenario,
+  constructionDelayMonths,
+  setConstructionDelayMonths,
   totalCost,
   setTotalCost,
   landCost,
@@ -2554,6 +2567,8 @@ export function ConstructionProjectPanel({
   setAccountManagementFee,
   setupFeePct,
   setSetupFeePct,
+  projectManagementFee,
+  setProjectManagementFee,
   legalAndControlFees,
   setLegalAndControlFees,
   completionGuaranteeLimit,
@@ -2598,7 +2613,8 @@ export function ConstructionProjectPanel({
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
               <MonthsMetricInput label="תקופת קרקע, חודשים" valueYears={landMonths / 12} setValueYears={(years) => setLandMonths(Math.round(years * 12))} minMonths={0} maxMonths={84} help="בדרך כלל הלוואה עד כניסה לבניה; המודל מגביל ל־84 חודשים." />
               <MonthsMetricInput label="תקופת בניה, חודשים" valueYears={constructionMonths / 12} setValueYears={(years) => setConstructionMonths(Math.round(years * 12))} minMonths={1} maxMonths={96} />
-              <MetricInput label="עלות פרויקט כוללת, ₪k" value={totalCost} setValue={setTotalCost} min={0} max={10000000} step={1000} />
+              <MonthsMetricInput label="תקופת סוף פרויקט/אכלוס, חודשים" valueYears={(finalMonths || 0) / 12} setValueYears={(years) => setFinalMonths(Math.round(years * 12))} minMonths={0} maxMonths={36} />
+              <MetricInput label="מסגרת מקסימלית לפרויקט, ₪k" value={totalCost} setValue={setTotalCost} min={0} max={10000000} step={1000} />
               <MetricInput label="עלות קרקע, ₪k" value={landCost} setValue={setLandCost} min={0} max={10000000} step={1000} />
               <MetricInput label="תמורות מכירה צפויות, ₪k" value={expectedRevenue} setValue={setExpectedRevenue} min={0} max={15000000} step={1000} />
               <MetricInput label="הון עצמי יזם, %" value={equityPct} setValue={setEquityPct} min={0} max={100} step={1} />
@@ -2648,14 +2664,15 @@ export function ConstructionProjectPanel({
               <MetricInput label="מרווח הלוואות, %" value={loanMargin} setValue={setLoanMargin} min={0} max={20} step={0.1} />
               <MetricInput label="עמלת ערבויות, %" value={guaranteeFeeRate} setValue={setGuaranteeFeeRate} min={0} max={10} step={0.1} />
               <MetricInput label="עמלת חוק מכר, %" value={saleLawGuaranteeFeeRate} setValue={setSaleLawGuaranteeFeeRate} min={0} max={10} step={0.1} />
-              <MetricInput label="עמלת הקמה, % מהמסגרת" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
+              <MetricInput label="עמלת אי ניצול, % מהמסגרות הלא מנוצלות" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
+              <MetricInput label="עמלת ניהול פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
               <MetricInput label="ניהול חשבון שנתי, ₪k" value={accountManagementFee} setValue={setAccountManagementFee} min={0} max={50000} step={10} />
               <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
             </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-4">
-            <h3 className="mb-4 font-semibold text-slate-800">RWA ו־CCF</h3>
+            <h3 className="mb-4 font-semibold text-slate-800">טבלת משקלי סיכון / RWA</h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
               <MetricInput label="משקל סיכון קרקע, %" value={landRiskWeight} setValue={setLandRiskWeight} min={0} max={250} step={5} />
               <MetricInput label="משקל סיכון בניה, %" value={constructionRiskWeight} setValue={setConstructionRiskWeight} min={0} max={250} step={5} />
@@ -2667,6 +2684,18 @@ export function ConstructionProjectPanel({
             </div>
           </div>
         </div>
+          <div className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50 p-4">
+            <h3 className="mb-3 font-semibold text-indigo-900">תרחישים</h3>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-sm font-medium text-slate-600">תרחיש מכירות</span>
+                <select value={salesScenario} onChange={(event) => setSalesScenario(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none ring-indigo-200 transition focus:ring-4">
+                  {Object.entries(CONSTRUCTION_SALES_SCENARIOS).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                </select>
+              </label>
+              <MetricInput label="עיכוב בבנייה, חודשים" value={constructionDelayMonths} setValue={setConstructionDelayMonths} min={0} max={120} step={1} />
+            </div>
+          </div>
       </Panel>
 
       <div className="grid gap-4 xl:grid-cols-5">

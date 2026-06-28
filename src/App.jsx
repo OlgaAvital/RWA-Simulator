@@ -210,6 +210,9 @@ export default function RwaReturnSimulator() {
 
   const [constructionLandMonths, setConstructionLandMonths] = useState(24);
   const [constructionBuildMonths, setConstructionBuildMonths] = useState(36);
+  const [constructionFinalMonths, setConstructionFinalMonths] = useState(6);
+  const [constructionSalesScenario, setConstructionSalesScenario] = useState("linear");
+  const [constructionDelayMonths, setConstructionDelayMonths] = useState(0);
   const [constructionTotalCost, setConstructionTotalCost] = useState(420000);
   const [constructionLandCost, setConstructionLandCost] = useState(140000);
   const [constructionExpectedRevenue, setConstructionExpectedRevenue] = useState(560000);
@@ -220,14 +223,15 @@ export default function RwaReturnSimulator() {
   const [constructionSaleLawGuaranteeFeeRate, setConstructionSaleLawGuaranteeFeeRate] = useState(0.65);
   const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(180);
   const [constructionSetupFeePct, setConstructionSetupFeePct] = useState(0.45);
+  const [constructionProjectManagementFee, setConstructionProjectManagementFee] = useState(0);
   const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(240);
   const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(25000);
-  const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(150);
-  const [constructionBuildRiskWeight, setConstructionBuildRiskWeight] = useState(150);
-  const [constructionSaleLawGuaranteeCcf, setConstructionSaleLawGuaranteeCcf] = useState(50);
+  const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(100);
+  const [constructionBuildRiskWeight, setConstructionBuildRiskWeight] = useState(100);
+  const [constructionSaleLawGuaranteeCcf, setConstructionSaleLawGuaranteeCcf] = useState(30);
   const [constructionGuaranteeCcf, setConstructionGuaranteeCcf] = useState(50);
-  const [constructionUndrawnLoanCcf, setConstructionUndrawnLoanCcf] = useState(40);
-  const [constructionSaleLawGuaranteeFinalCcf, setConstructionSaleLawGuaranteeFinalCcf] = useState(20);
+  const [constructionUndrawnLoanCcf, setConstructionUndrawnLoanCcf] = useState(0);
+  const [constructionSaleLawGuaranteeFinalCcf, setConstructionSaleLawGuaranteeFinalCcf] = useState(10);
   const [constructionSaleLawGuaranteeReductionStartPct, setConstructionSaleLawGuaranteeReductionStartPct] = useState(80);
   const [isConstructionCreditModalOpen, setIsConstructionCreditModalOpen] = useState(false);
 
@@ -246,8 +250,8 @@ export default function RwaReturnSimulator() {
       productType: "landLoan",
       amount: 105000,
       margin: 3.2,
-      ccfUndrawn: 40,
-      riskWeight: 150,
+      ccfUndrawn: 0,
+      riskWeight: 100,
       repaymentPriority: 1,
     },
     {
@@ -256,8 +260,8 @@ export default function RwaReturnSimulator() {
       productType: "seniorConstruction",
       amount: 210000,
       margin: 3.2,
-      ccfUndrawn: 40,
-      riskWeight: 150,
+      ccfUndrawn: 0,
+      riskWeight: 100,
       repaymentPriority: 1,
       drawQ1Pct: 8.33,
       drawQ2Pct: 8.33,
@@ -278,8 +282,9 @@ export default function RwaReturnSimulator() {
       productType: "mezzanineLoan",
       amount: 0,
       margin: 7.5,
-      ccfUndrawn: 40,
-      riskWeight: 200,
+      ccfUndrawn: 0,
+      riskWeight: 100,
+      balloonAtEnd: true,
       repaymentPriority: 2,
       drawQ1Pct: 0,
       drawQ2Pct: 0,
@@ -497,12 +502,12 @@ export default function RwaReturnSimulator() {
     setConstructionSetupFeePct(snapshot.constructionSetupFeePct ?? 0.45);
     setConstructionLegalAndControlFees(snapshot.constructionLegalAndControlFees ?? 240);
     setConstructionCompletionGuaranteeLimit(snapshot.constructionCompletionGuaranteeLimit ?? 25000);
-    setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 150);
-    setConstructionBuildRiskWeight(snapshot.constructionBuildRiskWeight ?? 150);
-    setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 50);
+    setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 100);
+    setConstructionBuildRiskWeight(snapshot.constructionBuildRiskWeight ?? 100);
+    setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 30);
     setConstructionGuaranteeCcf(snapshot.constructionGuaranteeCcf ?? 50);
-    setConstructionUndrawnLoanCcf(snapshot.constructionUndrawnLoanCcf ?? 40);
-    setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 20);
+    setConstructionUndrawnLoanCcf(snapshot.constructionUndrawnLoanCcf ?? 0);
+    setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 10);
     setConstructionSaleLawGuaranteeReductionStartPct(snapshot.constructionSaleLawGuaranteeReductionStartPct ?? 80);
     setConstructionCreditProducts(snapshot.constructionCreditProducts || []);
     setConstructionCollaterals(snapshot.constructionCollaterals || []);
@@ -807,6 +812,9 @@ export default function RwaReturnSimulator() {
       engine.calculateConstructionProjectForecast({
         landMonths: constructionLandMonths,
         constructionMonths: constructionBuildMonths,
+        finalMonths: constructionFinalMonths,
+        salesScenario: constructionSalesScenario,
+        constructionDelayMonths,
         totalCost: constructionTotalCost,
         landCost: constructionLandCost,
         expectedRevenue: constructionExpectedRevenue,
@@ -817,6 +825,7 @@ export default function RwaReturnSimulator() {
         saleLawGuaranteeFeeRate: constructionSaleLawGuaranteeFeeRate,
         accountManagementFee: constructionAccountManagementFee,
         setupFeePct: constructionSetupFeePct,
+        projectManagementFee: constructionProjectManagementFee,
         legalAndControlFees: constructionLegalAndControlFees,
         completionGuaranteeLimit: constructionCompletionGuaranteeLimit,
         landRiskWeight: constructionLandRiskWeight,
@@ -833,6 +842,9 @@ export default function RwaReturnSimulator() {
     [
       constructionLandMonths,
       constructionBuildMonths,
+      constructionFinalMonths,
+      constructionSalesScenario,
+      constructionDelayMonths,
       constructionTotalCost,
       constructionLandCost,
       constructionExpectedRevenue,
@@ -843,6 +855,7 @@ export default function RwaReturnSimulator() {
       constructionSaleLawGuaranteeFeeRate,
       constructionAccountManagementFee,
       constructionSetupFeePct,
+      constructionProjectManagementFee,
       constructionLegalAndControlFees,
       constructionCompletionGuaranteeLimit,
       constructionLandRiskWeight,
@@ -1103,6 +1116,12 @@ export default function RwaReturnSimulator() {
             setLandMonths={setConstructionLandMonths}
             constructionMonths={constructionBuildMonths}
             setConstructionMonths={setConstructionBuildMonths}
+            finalMonths={constructionFinalMonths}
+            setFinalMonths={setConstructionFinalMonths}
+            salesScenario={constructionSalesScenario}
+            setSalesScenario={setConstructionSalesScenario}
+            constructionDelayMonths={constructionDelayMonths}
+            setConstructionDelayMonths={setConstructionDelayMonths}
             totalCost={constructionTotalCost}
             setTotalCost={setConstructionTotalCost}
             landCost={constructionLandCost}
@@ -1123,6 +1142,8 @@ export default function RwaReturnSimulator() {
             setAccountManagementFee={setConstructionAccountManagementFee}
             setupFeePct={constructionSetupFeePct}
             setSetupFeePct={setConstructionSetupFeePct}
+            projectManagementFee={constructionProjectManagementFee}
+            setProjectManagementFee={setConstructionProjectManagementFee}
             legalAndControlFees={constructionLegalAndControlFees}
             setLegalAndControlFees={setConstructionLegalAndControlFees}
             completionGuaranteeLimit={constructionCompletionGuaranteeLimit}
