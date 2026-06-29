@@ -1198,9 +1198,9 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                               />
                             </FieldBox>
 
-                            <FieldBox title="ריבית ללקוח, %">
-                              <NumberCell wide value={product.customerRate ?? 0} onChange={(v) => updateProduct(product.id, "customerRate", clampNumber(v, 0, 30))} />
-                              <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Number(product.customerRate) > 0 ? `${(Math.max(0, Number(product.customerRate) || 0) - Math.max(0, Number(product.rate) || 0)).toFixed(2)}%` : "—"}</div>
+                            <FieldBox title="מחיר צל / עלות גיוס, %">
+                              <NumberCell wide value={Math.max(0, (Number(product.customerRate) || 0) - (Number(product.rate) || 0))} onChange={(v) => updateProduct(product.id, "customerRate", clampNumber(v, 0, 30) + (Number(product.rate) || 0))} />
+                              <div className="mt-1 text-[11px] text-slate-500">ריבית ללקוח: {((Number(product.customerRate) || 0)).toFixed(2)}%</div>
                             </FieldBox>
 
                             <FieldBox title="לוח סילוקין">
@@ -1252,9 +1252,9 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                             )}
 
                             {(rule.isPhasedLoan || (product.facilityMode || "standalone") === "facility") && (
-                              <FieldBox title="ריבית לקוח לא מנוצל, %">
-                                <NumberCell wide value={product.undrawnCustomerRate ?? (Math.max(0, Number(product.customerRate || product.rate) || 0) / 3)} onChange={(v) => updateProduct(product.id, "undrawnCustomerRate", clampNumber(v, 0, 30))} />
-                                <div className="mt-1 text-[11px] text-slate-500">נתון מחיר ללקוח; המרווח למעלה נכנס להכנסות.</div>
+                              <FieldBox title="מחיר צל לא מנוצל, %">
+                                <NumberCell wide value={Math.max(0, (Number(product.undrawnCustomerRate) || 0) - (Number(product.undrawnRate) || 0))} onChange={(v) => updateProduct(product.id, "undrawnCustomerRate", clampNumber(v, 0, 30) + (Number(product.undrawnRate) || 0))} />
+                                <div className="mt-1 text-[11px] text-slate-500">ריבית לקוח לא מנוצל: {((Number(product.undrawnCustomerRate) || 0)).toFixed(2)}%</div>
                               </FieldBox>
                             )}
 
@@ -1766,6 +1766,16 @@ export function InfrastructureProjectPanel({
   const [projectChartTab, setProjectChartTab] = useState("creditRisk");
   const [profitabilityPeriod, setProfitabilityPeriod] = useState("firstYear");
   const productChartColors = ["#f97316", "#0ea5e9", "#22c55e", "#a855f7", "#eab308", "#ef4444", "#14b8a6", "#64748b"];
+  const productCreditTotals = useMemo(() => {
+    const summarize = (rows) => (rows || []).reduce((sum, product) => {
+      const currencyCode = product.currency || projectCurrency;
+      return sum + Math.max(0, Number(product.amount) || 0) * getInfraFxRate(currencyCode, product.fxRate);
+    }, 0);
+    const bank = summarize((products || []).filter((product) => (product.lenderType || "bank") === "bank"));
+    const other = summarize((products || []).filter((product) => (product.lenderType || "bank") === "other"));
+    const total = bank + other;
+    return { bank, other, total, bankSharePct: total > 0 ? (bank / total) * 100 : 0, projectScopeDelta: total - (Math.max(0, Number(projectTotalScope) || 0)) };
+  }, [products, projectCurrency, projectTotalScope]);
   const profitabilityPeriodOptions = [
     { value: "firstYear", label: "שנה ראשונה" },
     { value: "constructionRampUpAvg", label: "ממוצע הקמה והרצה" },
@@ -1824,7 +1834,7 @@ export function InfrastructureProjectPanel({
       <Panel>
         <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">מודל פרויקטי תשתית — תחזית רב־שנתית</h2>
+            <h2 className="text-xl font-semibold">מודל פרויקטי תשתית — תחזית רב־שנתית (כולל תקופת הרצה)</h2>
             <p className="text-sm text-slate-500">
               לשונית ייעודית לפרויקטים ארוכי טווח: הנחות פרויקט, מוצרי אשראי לפי שלבים, הכנסות נוספות, בטוחות/ערבויות ותוצאות ניהוליות.
             </p>
@@ -1840,8 +1850,20 @@ export function InfrastructureProjectPanel({
               <MonthsMetricInput label="תקופת הקמה, חודשים" valueYears={constructionYears} setValueYears={setConstructionYears} minMonths={0} maxMonths={180} />
               <MonthsMetricInput label="תקופת הרצה, חודשים" valueYears={rampUpYears} setValueYears={setRampUpYears} minMonths={0} maxMonths={120} />
               <MonthsMetricInput label="תחילת פירעון, חודשים" valueYears={repaymentStartYear} setValueYears={setRepaymentStartYear} minMonths={1} maxMonths={420} />
-              <MetricInput label={`היקף פרויקט כולל, ${INFRA_CURRENCIES[projectCurrency]?.symbol || "₪"}k`} value={projectTotalScope} setValue={setProjectTotalScope} min={0} max={10000000} step={1000} />
-              <MetricInput label="חלק הבנק בסינדיקציה, %" value={bankSharePct} setValue={setBankSharePct} min={0} max={100} step={1} />
+              <div>
+                <MetricInput label={`היקף פרויקט כולל, ${INFRA_CURRENCIES[projectCurrency]?.symbol || "₪"}k`} value={projectTotalScope} setValue={setProjectTotalScope} min={0} max={10000000} step={1000} />
+                {Math.abs(productCreditTotals.projectScopeDelta) > 0.5 && (
+                  <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    סך מוצרי האשראי {productCreditTotals.projectScopeDelta > 0 ? "גבוה" : "נמוך"} מהיקף הפרויקט ב־{formatK(Math.abs(productCreditTotals.projectScopeDelta))}.
+                  </div>
+                )}
+              </div>
+              <div className="rounded-2xl bg-white p-3">
+                <MetricInput label="חלק הבנק בסינדיקציה, %" value={bankSharePct} setValue={setBankSharePct} min={0} max={100} step={1} />
+                <div className="mt-2 text-xs leading-5 text-slate-500">
+                  חישוב לפי מוצרים: בנק {formatK(productCreditTotals.bank)} / סה״כ אשראי {formatK(productCreditTotals.total)} = {productCreditTotals.bankSharePct.toFixed(1)}%.
+                </div>
+              </div>
               <div className="space-y-2 rounded-2xl bg-white p-3">
                 <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-600">
                   <span>הפרויקט בארגון הבנק</span>
@@ -2485,7 +2507,6 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                 <th className="p-3 text-right">ניצול/שחרור צפוי</th>
                 <th className="p-3 text-right">מרווח/עמלה</th>
                 <th className="p-3 text-right">ריבית ללקוח</th>
-                <th className="p-3 text-right">עדיפות פירעון</th>
                 {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
                 <th className="p-3 text-right">סה״כ שחרורים</th>
                 <th className="p-3 text-right">מחיקה</th>
@@ -2508,8 +2529,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                     <td className="p-3"><NumberCell value={product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell value={product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)} onChange={(v) => updateProduct(product.id, "repaymentPriority", clampNumber(v, 1, 9))} step="1" /></td>
+                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">עלות גיוס: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}%</div>}</td>
                     {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => (
                       <td key={field} className="p-3">
                         <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
@@ -2565,6 +2585,12 @@ export function ConstructionProjectPanel({
   setSetupFeePct,
   projectManagementFee,
   setProjectManagementFee,
+  landDocumentFee,
+  setLandDocumentFee,
+  escortDocumentFee,
+  setEscortDocumentFee,
+  workingCapitalIssuanceFee,
+  setWorkingCapitalIssuanceFee,
   legalAndControlFees,
   setLegalAndControlFees,
   onOpenCreditProducts,
@@ -2647,7 +2673,10 @@ export function ConstructionProjectPanel({
             <h3 className="mb-4 font-semibold text-slate-800">הכנסות נוספות</h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
               <MetricInput label="עמלת אי ניצול, % מהמסגרות הלא מנוצלות" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
-              <MetricInput label="עמלת ניהול פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
+              <MetricInput label="עמלת הכנת מסמכים לקרקע, ₪k" value={landDocumentFee} setValue={setLandDocumentFee} min={0} max={50000} step={10} />
+              <MetricInput label="עמלת הכנת מסמכים לליווי, ₪k" value={escortDocumentFee} setValue={setEscortDocumentFee} min={0} max={50000} step={10} />
+              <MetricInput label="עמלת ליווי פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
+              <MetricInput label="עמלת הנפקת עח״מ חד פעמית, ₪k" value={workingCapitalIssuanceFee} setValue={setWorkingCapitalIssuanceFee} min={0} max={50000} step={10} />
               <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
             </div>
           </div>
@@ -2656,9 +2685,21 @@ export function ConstructionProjectPanel({
             <h3 className="mb-4 font-semibold text-emerald-900">תוצאות ניהוליות</h3>
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
               <ReadOnlyBox title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
-              <ReadOnlyBox title="ערך פרויקט / מכירות" value={`${forecast.projectValueToSalesPct.toFixed(1)}%`} />
+              <ReadOnlyBox title="LTV פרויקט" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
               <ReadOnlyBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
-              <ReadOnlyBox title="תשואה ממוצעת ל־RWA" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} tone="green" />
+              <ReadOnlyBox title="תשואה ל־RWA שנה ראשונה" value={`${forecast.firstYearReturnOnRwa.toFixed(2)}%`} tone="green" />
+              <ReadOnlyBox title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} tone="green" />
+              <ReadOnlyBox title="הכנסות שנה ראשונה" value={formatK(forecast.firstYearIncome)} positive />
+              <ReadOnlyBox title="הכנסות ממוצע לשנה" value={formatK(forecast.averageAnnualIncome)} positive />
+            </div>
+            <div className="mt-3 overflow-hidden rounded-2xl border border-emerald-200 bg-white text-xs">
+              <table className="w-full">
+                <thead className="bg-emerald-100 text-emerald-900"><tr><th className="p-2 text-right">תרחיש</th><th className="p-2 text-right">RWA</th><th className="p-2 text-right">תשואה</th><th className="p-2 text-right">הכנסה שנתית</th></tr></thead>
+                <tbody>
+                  <tr><td className="p-2">שנה 1</td><td className="p-2">{formatK(forecast.rows.slice(0, 12).reduce((sum, row) => sum + row.rwa, 0) / Math.max(1, Math.min(12, forecast.rows.length)))}</td><td className="p-2">{forecast.firstYearReturnOnRwa.toFixed(2)}%</td><td className="p-2">{formatK(forecast.firstYearIncome)}</td></tr>
+                  <tr><td className="p-2">ממוצע פרויקט</td><td className="p-2">{formatK(forecast.averageRwa)}</td><td className="p-2">{forecast.averageReturnOnRwa.toFixed(2)}%</td><td className="p-2">{formatK(forecast.averageAnnualIncome)}</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -2706,10 +2747,20 @@ export function ConstructionProjectPanel({
             <div className="flex gap-2 rounded-2xl bg-slate-100 p-1">
               <TabButton active={chartTab === "credit"} onClick={() => setChartTab("credit")}>חשיפה</TabButton>
               <TabButton active={chartTab === "income"} onClick={() => setChartTab("income")}>הכנסות</TabButton>
+              <TabButton active={chartTab === "productRwa"} onClick={() => setChartTab("productRwa")}>RWA לפי מוצר</TabButton>
             </div>
           </div>
           <div className="h-80 min-w-0">
             <ResponsiveContainer width="100%" height="100%">
+              {chartTab === "productRwa" ? (
+              <BarChart data={forecast.productRwaBreakdown || []} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
+                <Tooltip formatter={(value) => formatK(Number(value))} />
+                <Bar dataKey="averageRwa" fill="#22c55e" name="RWA ממוצעת" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            ) : (
               <LineChart data={sampledRows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
@@ -2730,6 +2781,7 @@ export function ConstructionProjectPanel({
                   </>
                 )}
               </LineChart>
+            )}
             </ResponsiveContainer>
           </div>
         </Panel>

@@ -1735,6 +1735,9 @@ export function calculateConstructionProjectForecast(input = {}) {
   const accountManagementFee = Math.max(0, Number(input.accountManagementFee) || 0);
   const setupFeePct = Math.max(0, Number(input.setupFeePct) || 0);
   const legalAndControlFees = Math.max(0, Number(input.legalAndControlFees) || 0);
+  const landDocumentFee = Math.max(0, Number(input.landDocumentFee) || 0);
+  const escortDocumentFee = Math.max(0, Number(input.escortDocumentFee) || 0);
+  const workingCapitalIssuanceFee = Math.max(0, Number(input.workingCapitalIssuanceFee) || 0);
   const configuredRiskWeights = { ...CONSTRUCTION_RISK_WEIGHT_TABLE, ...(input.riskWeightTable || {}) };
   const landLoanLtvPct = landCost > 0 ? ((input.creditProducts || []).filter((p) => p.productType === "landLoan").reduce((sum, p) => sum + (Number(p.amount) || 0), 0) / landCost) * 100 : 0;
   const landRiskWeight = landLoanLtvPct > configuredRiskWeights.landLoanHighLtvThresholdPct ? configuredRiskWeights.landLoanHighLtv : configuredRiskWeights.cashCreditDefault;
@@ -1771,7 +1774,7 @@ export function calculateConstructionProjectForecast(input = {}) {
   const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility - mezzanineFacility);
   const seniorLoanFacility = Math.max(0, totalLoanFacility - mezzanineFacility);
   const saleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0) || expectedRevenue * (bankSharePct / 100);
-  const setupFee = 0;
+  const setupFee = landDocumentFee + escortDocumentFee + workingCapitalIssuanceFee;
   const monthlyAccountFee = 0;
   const monthlyControlFee = legalAndControlFees / 12;
   const monthlyProjectManagementFee = Math.max(0, Number(input.projectManagementFee) || 0) / 12;
@@ -1880,7 +1883,8 @@ export function calculateConstructionProjectForecast(input = {}) {
     const saleLawGuaranteeIncome = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + saleLawGuaranteeOutstanding * (product.margin / 100) / 12, 0) || saleLawGuaranteeOutstanding * (saleLawGuaranteeFeeRate / 100) / 12;
     const unusedFrames = Math.max(0, totalProjectFrame - loanOutstanding - saleLawGuaranteeOutstanding - completionGuaranteeOutstanding);
     const unusedFeeIncome = unusedFrames * (setupFeePct / 100) / 12;
-    const feeIncome = guaranteeIncome + saleLawGuaranteeIncome + monthlyAccountFee + monthlyControlFee + monthlyProjectManagementFee + unusedFeeIncome;
+    const oneTimeFeeIncome = month === 1 ? setupFee : 0;
+    const feeIncome = guaranteeIncome + saleLawGuaranteeIncome + monthlyAccountFee + monthlyControlFee + monthlyProjectManagementFee + unusedFeeIncome + oneTimeFeeIncome;
     const totalIncome = interestIncome + feeIncome - insuranceExpense;
 
     return {
@@ -1916,6 +1920,7 @@ export function calculateConstructionProjectForecast(input = {}) {
       feeIncome,
       unusedFeeIncome,
       projectManagementFeeIncome: monthlyProjectManagementFee,
+      oneTimeFeeIncome,
       insuranceExpense,
       totalIncome,
       returnOnRwa: rwa > 0 ? (totalIncome * 12 / rwa) * 100 : 0,
@@ -1924,6 +1929,11 @@ export function calculateConstructionProjectForecast(input = {}) {
     };
   });
 
+  const productRwaTotals = {};
+  rows.forEach((row) => {
+    row.productRwaDetails = creditProducts.map((product) => ({ name: product.name, averageRwa: row.loanRwa * ((Math.max(product.amount || 0, product.limit || 0)) / Math.max(totalLoanFacility, 1)) }));
+    row.productRwaDetails.forEach((detail) => { productRwaTotals[detail.name] = (productRwaTotals[detail.name] || 0) + detail.averageRwa; });
+  });
   const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
   const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / rows.length;
   const averageAnnualIncome = totalIncome / (rows.length / 12);
@@ -1986,6 +1996,9 @@ export function calculateConstructionProjectForecast(input = {}) {
     ltvAfterMezzanine,
     projectValueToSalesPct,
     landPeriodLtv,
+    productRwaBreakdown: Object.entries(productRwaTotals).map(([name, total]) => ({ name, averageRwa: total / rows.length })),
+    firstYearIncome: rows.filter((row) => row.month <= 12).reduce((sum, row) => sum + row.totalIncome, 0),
+    firstYearReturnOnRwa: rows.slice(0, 12).reduce((sum, row) => sum + row.rwa, 0) > 0 ? (rows.slice(0, 12).reduce((sum, row) => sum + row.totalIncome, 0) / (rows.slice(0, 12).reduce((sum, row) => sum + row.rwa, 0) / Math.max(1, Math.min(12, rows.length)))) * 100 : 0,
     regulatoryChecks: CONSTRUCTION_REGULATORY_CHECKS,
   };
 }
