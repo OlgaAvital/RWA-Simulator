@@ -17,6 +17,9 @@ export function useConstructionProjectState() {
   const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(180);
   const [constructionSetupFeePct, setConstructionSetupFeePct] = useState(0.45);
   const [constructionProjectManagementFee, setConstructionProjectManagementFee] = useState(0);
+  const [constructionLandDocumentFee, setConstructionLandDocumentFee] = useState(0);
+  const [constructionEscortDocumentFee, setConstructionEscortDocumentFee] = useState(0);
+  const [constructionWorkingCapitalIssuanceFee, setConstructionWorkingCapitalIssuanceFee] = useState(0);
   const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(240);
   const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(25000);
   const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(100);
@@ -133,6 +136,12 @@ export function useConstructionProjectState() {
     setConstructionSetupFeePct,
     constructionProjectManagementFee,
     setConstructionProjectManagementFee,
+    constructionLandDocumentFee,
+    setConstructionLandDocumentFee,
+    constructionEscortDocumentFee,
+    setConstructionEscortDocumentFee,
+    constructionWorkingCapitalIssuanceFee,
+    setConstructionWorkingCapitalIssuanceFee,
     constructionLegalAndControlFees,
     setConstructionLegalAndControlFees,
     constructionCompletionGuaranteeLimit,
