@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import * as engine from "./domain/simulatorEngine.js";
+import { useConstructionProjectState } from "./modules/construction/useConstructionProjectState.js";
 
 import {
   Badge,
@@ -44,9 +45,6 @@ import {
 
 import {
   AccountLookupModal,
-  ConstructionCollateralModal,
-  ConstructionCreditModal,
-  ConstructionProjectPanel,
   DefinitionsPanel,
   Header,
   InfraFeesModal,
@@ -57,6 +55,11 @@ import {
   ProductsModal,
   SecuritiesModal,
 } from "./components/simulator/index.jsx";
+import {
+  ConstructionCollateralModal,
+  ConstructionCreditModal,
+  ConstructionProjectPanel,
+} from "./modules/construction/index.jsx";
 
 export { calculateRwaResult } from "./domain/simulatorEngine.js";
 
@@ -208,93 +211,69 @@ export default function RwaReturnSimulator() {
   const [infraOperatingRiskWeight, setInfraOperatingRiskWeight] = useState(100);
   const [infraRepaymentStartYear, setInfraRepaymentStartYear] = useState(7);
 
-  const [constructionLandMonths, setConstructionLandMonths] = useState(24);
-  const [constructionBuildMonths, setConstructionBuildMonths] = useState(36);
-  const [constructionTotalCost, setConstructionTotalCost] = useState(420000);
-  const [constructionLandCost, setConstructionLandCost] = useState(140000);
-  const [constructionExpectedRevenue, setConstructionExpectedRevenue] = useState(560000);
-  const [constructionEquityPct, setConstructionEquityPct] = useState(25);
-  const [constructionBankSharePct, setConstructionBankSharePct] = useState(100);
-  const [constructionLoanMargin, setConstructionLoanMargin] = useState(3.2);
-  const [constructionGuaranteeFeeRate, setConstructionGuaranteeFeeRate] = useState(1.1);
-  const [constructionSaleLawGuaranteeFeeRate, setConstructionSaleLawGuaranteeFeeRate] = useState(0.65);
-  const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(180);
-  const [constructionSetupFeePct, setConstructionSetupFeePct] = useState(0.45);
-  const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(240);
-  const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(25000);
-  const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(150);
-  const [constructionBuildRiskWeight, setConstructionBuildRiskWeight] = useState(150);
-  const [constructionSaleLawGuaranteeCcf, setConstructionSaleLawGuaranteeCcf] = useState(50);
-  const [constructionGuaranteeCcf, setConstructionGuaranteeCcf] = useState(50);
-  const [constructionUndrawnLoanCcf, setConstructionUndrawnLoanCcf] = useState(40);
-  const [constructionSaleLawGuaranteeFinalCcf, setConstructionSaleLawGuaranteeFinalCcf] = useState(20);
-  const [constructionSaleLawGuaranteeReductionStartPct, setConstructionSaleLawGuaranteeReductionStartPct] = useState(80);
-  const [isConstructionCreditModalOpen, setIsConstructionCreditModalOpen] = useState(false);
+  const {
+    constructionLandMonths,
+    setConstructionLandMonths,
+    constructionBuildMonths,
+    setConstructionBuildMonths,
+    constructionFinalMonths,
+    setConstructionFinalMonths,
+    constructionSalesScenario,
+    setConstructionSalesScenario,
+    constructionDelayMonths,
+    setConstructionDelayMonths,
+    constructionTotalCost,
+    setConstructionTotalCost,
+    constructionLandCost,
+    setConstructionLandCost,
+    constructionExpectedRevenue,
+    setConstructionExpectedRevenue,
+    constructionEquityPct,
+    setConstructionEquityPct,
+    constructionBankSharePct,
+    setConstructionBankSharePct,
+    constructionLoanMargin,
+    setConstructionLoanMargin,
+    constructionGuaranteeFeeRate,
+    setConstructionGuaranteeFeeRate,
+    constructionSaleLawGuaranteeFeeRate,
+    setConstructionSaleLawGuaranteeFeeRate,
+    constructionAccountManagementFee,
+    setConstructionAccountManagementFee,
+    constructionSetupFeePct,
+    setConstructionSetupFeePct,
+    constructionProjectManagementFee,
+    setConstructionProjectManagementFee,
+    constructionLegalAndControlFees,
+    setConstructionLegalAndControlFees,
+    constructionCompletionGuaranteeLimit,
+    setConstructionCompletionGuaranteeLimit,
+    constructionLandRiskWeight,
+    setConstructionLandRiskWeight,
+    constructionBuildRiskWeight,
+    setConstructionBuildRiskWeight,
+    constructionSaleLawGuaranteeCcf,
+    setConstructionSaleLawGuaranteeCcf,
+    constructionGuaranteeCcf,
+    setConstructionGuaranteeCcf,
+    constructionUndrawnLoanCcf,
+    setConstructionUndrawnLoanCcf,
+    constructionSaleLawGuaranteeFinalCcf,
+    setConstructionSaleLawGuaranteeFinalCcf,
+    constructionSaleLawGuaranteeReductionStartPct,
+    setConstructionSaleLawGuaranteeReductionStartPct,
+    isConstructionCreditModalOpen,
+    setIsConstructionCreditModalOpen,
+    isConstructionCollateralModalOpen,
+    setIsConstructionCollateralModalOpen,
+    constructionCollaterals,
+    setConstructionCollaterals,
+    constructionInsurances,
+    setConstructionInsurances,
+    constructionCreditProducts,
+    setConstructionCreditProducts,
+  } = useConstructionProjectState();
 
-  const [isConstructionCollateralModalOpen, setIsConstructionCollateralModalOpen] = useState(false);
-  const [constructionCollaterals, setConstructionCollaterals] = useState([
-    { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 140000, haircutPct: 35, eligible: true },
-    { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 50000, haircutPct: 100, eligible: false },
-  ]);
-  const [constructionInsurances, setConstructionInsurances] = useState([
-    { id: 1, name: "ביטוח ערבויות חוק מכר", insuranceType: "guaranteeInsurance", insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0.35, paymentAmount: 0 },
-  ]);
-  const [constructionCreditProducts, setConstructionCreditProducts] = useState([
-    {
-      id: 1,
-      name: "הלוואת קרקע",
-      productType: "landLoan",
-      amount: 105000,
-      margin: 3.2,
-      ccfUndrawn: 40,
-      riskWeight: 150,
-      repaymentPriority: 1,
-    },
-    {
-      id: 2,
-      name: "הלוואת בניה בכירה",
-      productType: "seniorConstruction",
-      amount: 210000,
-      margin: 3.2,
-      ccfUndrawn: 40,
-      riskWeight: 150,
-      repaymentPriority: 1,
-      drawQ1Pct: 8.33,
-      drawQ2Pct: 8.33,
-      drawQ3Pct: 8.33,
-      drawQ4Pct: 8.33,
-      drawQ5Pct: 8.33,
-      drawQ6Pct: 8.33,
-      drawQ7Pct: 8.33,
-      drawQ8Pct: 8.33,
-      drawQ9Pct: 8.33,
-      drawQ10Pct: 8.33,
-      drawQ11Pct: 8.33,
-      drawQ12Pct: 8.37,
-    },
-    {
-      id: 3,
-      name: "הלוואת מזנין",
-      productType: "mezzanineLoan",
-      amount: 0,
-      margin: 7.5,
-      ccfUndrawn: 40,
-      riskWeight: 200,
-      repaymentPriority: 2,
-      drawQ1Pct: 0,
-      drawQ2Pct: 0,
-      drawQ3Pct: 0,
-      drawQ4Pct: 0,
-      drawQ5Pct: 0,
-      drawQ6Pct: 0,
-      drawQ7Pct: 0,
-      drawQ8Pct: 0,
-      drawQ9Pct: 0,
-      drawQ10Pct: 0,
-      drawQ11Pct: 0,
-      drawQ12Pct: 0,
-    },
-  ]);
   const [isSecuritiesModalOpen, setIsSecuritiesModalOpen] = useState(false);
   const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
   const [isAccountLookupModalOpen, setIsAccountLookupModalOpen] = useState(false);
@@ -497,12 +476,12 @@ export default function RwaReturnSimulator() {
     setConstructionSetupFeePct(snapshot.constructionSetupFeePct ?? 0.45);
     setConstructionLegalAndControlFees(snapshot.constructionLegalAndControlFees ?? 240);
     setConstructionCompletionGuaranteeLimit(snapshot.constructionCompletionGuaranteeLimit ?? 25000);
-    setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 150);
-    setConstructionBuildRiskWeight(snapshot.constructionBuildRiskWeight ?? 150);
-    setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 50);
+    setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 100);
+    setConstructionBuildRiskWeight(snapshot.constructionBuildRiskWeight ?? 100);
+    setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 30);
     setConstructionGuaranteeCcf(snapshot.constructionGuaranteeCcf ?? 50);
-    setConstructionUndrawnLoanCcf(snapshot.constructionUndrawnLoanCcf ?? 40);
-    setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 20);
+    setConstructionUndrawnLoanCcf(snapshot.constructionUndrawnLoanCcf ?? 0);
+    setConstructionSaleLawGuaranteeFinalCcf(snapshot.constructionSaleLawGuaranteeFinalCcf ?? 10);
     setConstructionSaleLawGuaranteeReductionStartPct(snapshot.constructionSaleLawGuaranteeReductionStartPct ?? 80);
     setConstructionCreditProducts(snapshot.constructionCreditProducts || []);
     setConstructionCollaterals(snapshot.constructionCollaterals || []);
@@ -807,6 +786,9 @@ export default function RwaReturnSimulator() {
       engine.calculateConstructionProjectForecast({
         landMonths: constructionLandMonths,
         constructionMonths: constructionBuildMonths,
+        finalMonths: constructionFinalMonths,
+        salesScenario: constructionSalesScenario,
+        constructionDelayMonths,
         totalCost: constructionTotalCost,
         landCost: constructionLandCost,
         expectedRevenue: constructionExpectedRevenue,
@@ -817,6 +799,7 @@ export default function RwaReturnSimulator() {
         saleLawGuaranteeFeeRate: constructionSaleLawGuaranteeFeeRate,
         accountManagementFee: constructionAccountManagementFee,
         setupFeePct: constructionSetupFeePct,
+        projectManagementFee: constructionProjectManagementFee,
         legalAndControlFees: constructionLegalAndControlFees,
         completionGuaranteeLimit: constructionCompletionGuaranteeLimit,
         landRiskWeight: constructionLandRiskWeight,
@@ -833,6 +816,9 @@ export default function RwaReturnSimulator() {
     [
       constructionLandMonths,
       constructionBuildMonths,
+      constructionFinalMonths,
+      constructionSalesScenario,
+      constructionDelayMonths,
       constructionTotalCost,
       constructionLandCost,
       constructionExpectedRevenue,
@@ -843,6 +829,7 @@ export default function RwaReturnSimulator() {
       constructionSaleLawGuaranteeFeeRate,
       constructionAccountManagementFee,
       constructionSetupFeePct,
+      constructionProjectManagementFee,
       constructionLegalAndControlFees,
       constructionCompletionGuaranteeLimit,
       constructionLandRiskWeight,
@@ -1103,6 +1090,12 @@ export default function RwaReturnSimulator() {
             setLandMonths={setConstructionLandMonths}
             constructionMonths={constructionBuildMonths}
             setConstructionMonths={setConstructionBuildMonths}
+            finalMonths={constructionFinalMonths}
+            setFinalMonths={setConstructionFinalMonths}
+            salesScenario={constructionSalesScenario}
+            setSalesScenario={setConstructionSalesScenario}
+            constructionDelayMonths={constructionDelayMonths}
+            setConstructionDelayMonths={setConstructionDelayMonths}
             totalCost={constructionTotalCost}
             setTotalCost={setConstructionTotalCost}
             landCost={constructionLandCost}
@@ -1115,32 +1108,12 @@ export default function RwaReturnSimulator() {
             setBankSharePct={setConstructionBankSharePct}
             loanMargin={constructionLoanMargin}
             setLoanMargin={setConstructionLoanMargin}
-            guaranteeFeeRate={constructionGuaranteeFeeRate}
-            setGuaranteeFeeRate={setConstructionGuaranteeFeeRate}
-            saleLawGuaranteeFeeRate={constructionSaleLawGuaranteeFeeRate}
-            setSaleLawGuaranteeFeeRate={setConstructionSaleLawGuaranteeFeeRate}
-            accountManagementFee={constructionAccountManagementFee}
-            setAccountManagementFee={setConstructionAccountManagementFee}
             setupFeePct={constructionSetupFeePct}
             setSetupFeePct={setConstructionSetupFeePct}
+            projectManagementFee={constructionProjectManagementFee}
+            setProjectManagementFee={setConstructionProjectManagementFee}
             legalAndControlFees={constructionLegalAndControlFees}
             setLegalAndControlFees={setConstructionLegalAndControlFees}
-            completionGuaranteeLimit={constructionCompletionGuaranteeLimit}
-            setCompletionGuaranteeLimit={setConstructionCompletionGuaranteeLimit}
-            landRiskWeight={constructionLandRiskWeight}
-            setLandRiskWeight={setConstructionLandRiskWeight}
-            constructionRiskWeight={constructionBuildRiskWeight}
-            setConstructionRiskWeight={setConstructionBuildRiskWeight}
-            saleLawGuaranteeCcf={constructionSaleLawGuaranteeCcf}
-            setSaleLawGuaranteeCcf={setConstructionSaleLawGuaranteeCcf}
-            guaranteeCcf={constructionGuaranteeCcf}
-            setGuaranteeCcf={setConstructionGuaranteeCcf}
-            undrawnLoanCcf={constructionUndrawnLoanCcf}
-            setUndrawnLoanCcf={setConstructionUndrawnLoanCcf}
-            saleLawGuaranteeFinalCcf={constructionSaleLawGuaranteeFinalCcf}
-            setSaleLawGuaranteeFinalCcf={setConstructionSaleLawGuaranteeFinalCcf}
-            saleLawGuaranteeReductionStartPct={constructionSaleLawGuaranteeReductionStartPct}
-            setSaleLawGuaranteeReductionStartPct={setConstructionSaleLawGuaranteeReductionStartPct}
             onOpenCreditProducts={() => setIsConstructionCreditModalOpen(true)}
             onOpenCollaterals={() => setIsConstructionCollateralModalOpen(true)}
           />
