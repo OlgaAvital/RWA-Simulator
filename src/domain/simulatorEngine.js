@@ -1162,6 +1162,11 @@ export function calculateInfrastructureProjectForecast(input) {
     };
   });
 
+  const productRwaTotals = {};
+  rows.forEach((row) => {
+    row.productRwaDetails = creditProducts.map((product) => ({ name: product.name, averageRwa: row.loanRwa * ((Math.max(product.amount || 0, product.limit || 0)) / Math.max(totalLoanFacility, 1)) }));
+    row.productRwaDetails.forEach((detail) => { productRwaTotals[detail.name] = (productRwaTotals[detail.name] || 0) + detail.averageRwa; });
+  });
   const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
   const totalProductFeeIncome = rows.reduce((sum, row) => sum + row.productFeeIncome, 0);
   const totalAdditionalIncome = rows.reduce((sum, row) => sum + row.additionalIncome, 0);
