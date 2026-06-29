@@ -31,7 +31,7 @@ import {
   SECURITY_RULES,
   CONSTRUCTION_COLLATERAL_TYPES,
   CONSTRUCTION_CREDIT_PRODUCT_TYPES,
-  CONSTRUCTION_DRAWDOWN_FIELDS,
+  CONSTRUCTION_UTILIZATION_FIELDS,
   CONSTRUCTION_INSURANCE_TYPES,
   CONSTRUCTION_INSURER_RATING_RULES,
   CONSTRUCTION_REGULATORY_CHECKS,
@@ -2444,7 +2444,7 @@ export function ConstructionCollateralModal({ collaterals, setCollaterals, insur
   );
 }
 
-export function ConstructionCreditModal({ products, setProducts, totalCost, landCost, equityPct, bankSharePct, onBeforeChange, onClose }) {
+export function ConstructionCreditModal({ products, setProducts, totalCost, landCost, equityPct, bankSharePct, constructionMonths = 36, onBeforeChange, onClose }) {
   const updateProduct = (id, field, value) => {
     onBeforeChange?.();
     setProducts((rows) => (rows || []).map((row) => (row.id === id ? { ...row, [field]: value } : row)));
@@ -2466,7 +2466,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
         riskWeight: rule.defaultRiskWeight,
         repaymentPriority: rule.isMezzanine ? 2 : 1,
         balloonAtEnd: rule.defaultBalloonAtEnd || false,
-        ...Object.fromEntries(CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }, index) => [field, rule.isGuarantee ? 0 : index === 11 ? 8.37 : 8.33])),
+        ...Object.fromEntries(CONSTRUCTION_UTILIZATION_FIELDS.map(({ field }, index) => [field, rule.isGuarantee ? 0 : Math.min(100, Number((((index + 1) / Math.max(1, Math.ceil(constructionMonths / 6))) * 100).toFixed(2)))])),
       },
     ]);
   };
@@ -2485,8 +2485,8 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
       <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex flex-col gap-3 border-b bg-slate-50 p-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">מסגרות הלוואות וצפי שחרורים — פרויקט בניה</h2>
-            <p className="mt-1 text-sm text-slate-600">הזיני את מסגרת ההלוואות בפועל ואת פריסת השחרורים לפי רבעונים. הלוואת מזנין מוצגת בנפרד ומשפיעה על LTV לפני/אחרי מזנין.</p>
+            <h2 className="text-2xl font-bold">מסגרות הלוואות וצפי ניצול — פרויקט בניה</h2>
+            <p className="mt-1 text-sm text-slate-600">הזיני מסגרת הלוואות וצפי ניצול בכל חציון. החלק המנוצל מחושב ב־CCF 100%, והיתרה הלא מנוצלת מחושבת לאחר קיזוז ערבויות חוק מכר ומסגרת הפרויקט.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => addProduct("seniorConstruction")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ הלוואה בכירה</button>
@@ -2504,11 +2504,11 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                 <th className="p-3 text-right">שם</th>
                 <th className="p-3 text-right">סוג</th>
                 <th className="p-3 text-right">מסגרת</th>
-                <th className="p-3 text-right">ניצול/שחרור צפוי</th>
+                <th className="p-3 text-right">ניצול שיא צפוי</th>
                 <th className="p-3 text-right">מרווח/עמלה</th>
                 <th className="p-3 text-right">ריבית ללקוח</th>
-                {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
-                <th className="p-3 text-right">סה״כ שחרורים</th>
+                {CONSTRUCTION_UTILIZATION_FIELDS.slice(0, Math.max(1, Math.ceil(constructionMonths / 6))).map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
+                <th className="p-3 text-right">ניצול אחרון</th>
                 <th className="p-3 text-right">מחיקה</th>
               </tr>
             </thead>
@@ -2517,7 +2517,8 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                 const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
                 const isLand = rule.stage === "land";
                 const isGuarantee = rule.isGuarantee;
-                const drawTotal = CONSTRUCTION_DRAWDOWN_FIELDS.reduce((sum, { field }) => sum + (Number(product[field]) || 0), 0);
+                const visibleUtilizationFields = CONSTRUCTION_UTILIZATION_FIELDS.slice(0, Math.max(1, Math.ceil(constructionMonths / 6)));
+                const lastUtilizationPct = visibleUtilizationFields.reduce((last, { field }) => (product[field] ?? last), 0);
                 return (
                   <tr key={product.id} className="border-t align-top">
                     <td className="p-3"><input value={product.name || ""} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
@@ -2530,14 +2531,14 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                     <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
                     <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">עלות גיוס: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}%</div>}</td>
-                    {CONSTRUCTION_DRAWDOWN_FIELDS.map(({ field }) => (
+                    {visibleUtilizationFields.map(({ field }) => (
                       <td key={field} className="p-3">
                         <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
-                        {!isLand && !isGuarantee && <div className="text-[11px] text-slate-500">{formatK((Number(product.amount) || 0) * (Number(product[field]) || 0) / 100)}</div>}
+                        {!isLand && !isGuarantee && <div className="text-[11px] text-slate-500">{formatK((Number(product.limit ?? product.amount) || 0) * (Number(product[field]) || 0) / 100)}</div>}
                         </div>
                       </td>
                     ))}
-                    <td className={`p-3 font-bold ${isLand || Math.abs(drawTotal - 100) < 0.5 || drawTotal === 0 ? "text-slate-700" : "text-amber-700"}`}>{isLand ? "מיידי" : isGuarantee ? "ללא שחרור" : `${drawTotal.toFixed(1)}%`}</td>
+                    <td className="p-3 font-bold text-slate-700">{isLand ? "100% בתקופת קרקע" : isGuarantee ? "ללא ניצול הלוואה" : `${Number(lastUtilizationPct || 0).toFixed(1)}%`}</td>
                     <td className="p-3"><button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
                   </tr>
                 );
@@ -2545,7 +2546,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
             </tbody>
           </table>
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            הערה: בהלוואת קרקע השחרור מתבצע במלואו בחודש הראשון. בהלוואות בניה/מזנין אחוזי השחרור נפרסים רבעונית ומחולקים ליניארית בין שלושת חודשי הרבעון. אם סך הרבעונים אינו 100%, המודל משתמש בדיוק בפריסה שהוזנה כדי לאפשר תרחישי מסגרת חלקית או עודפת.
+            הערה: בהלוואות בניה/מזנין מזינים צפי ניצול בכל חציון מתוך מסגרת ההלוואה. לדוגמה: מסגרת 1,000 וניצול 80% יוצרים אשראי מנוצל 800 ב־CCF 100%; היתרה הלא מנוצלת מחושבת רק מתוך מסגרת הפרויקט שנותרה אחרי ניצול הלוואות וערבויות חוק מכר, וב־CCF 50%.
           </div>
         </div>
 

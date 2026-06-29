@@ -1724,6 +1724,7 @@ export default function RwaReturnSimulator() {
           landCost={constructionLandCost}
           equityPct={constructionEquityPct}
           bankSharePct={constructionBankSharePct}
+          constructionMonths={constructionBuildMonths}
           onBeforeChange={saveSnapshot}
           onClose={() => setIsConstructionCreditModalOpen(false)}
         />
