@@ -244,6 +244,12 @@ export default function RwaReturnSimulator() {
     setConstructionSetupFeePct,
     constructionProjectManagementFee,
     setConstructionProjectManagementFee,
+    constructionWorkingCapitalIssuanceFee,
+    setConstructionWorkingCapitalIssuanceFee,
+    constructionEscortDocumentFee,
+    setConstructionEscortDocumentFee,
+    constructionLandDocumentFee,
+    setConstructionLandDocumentFee,
     constructionLegalAndControlFees,
     setConstructionLegalAndControlFees,
     constructionCompletionGuaranteeLimit,
@@ -800,6 +806,9 @@ export default function RwaReturnSimulator() {
         accountManagementFee: constructionAccountManagementFee,
         setupFeePct: constructionSetupFeePct,
         projectManagementFee: constructionProjectManagementFee,
+        landDocumentFee: constructionLandDocumentFee,
+        escortDocumentFee: constructionEscortDocumentFee,
+        workingCapitalIssuanceFee: constructionWorkingCapitalIssuanceFee,
         legalAndControlFees: constructionLegalAndControlFees,
         completionGuaranteeLimit: constructionCompletionGuaranteeLimit,
         landRiskWeight: constructionLandRiskWeight,
@@ -830,6 +839,9 @@ export default function RwaReturnSimulator() {
       constructionAccountManagementFee,
       constructionSetupFeePct,
       constructionProjectManagementFee,
+      constructionLandDocumentFee,
+      constructionEscortDocumentFee,
+      constructionWorkingCapitalIssuanceFee,
       constructionLegalAndControlFees,
       constructionCompletionGuaranteeLimit,
       constructionLandRiskWeight,
@@ -1112,6 +1124,12 @@ export default function RwaReturnSimulator() {
             setSetupFeePct={setConstructionSetupFeePct}
             projectManagementFee={constructionProjectManagementFee}
             setProjectManagementFee={setConstructionProjectManagementFee}
+            landDocumentFee={constructionLandDocumentFee}
+            setLandDocumentFee={setConstructionLandDocumentFee}
+            escortDocumentFee={constructionEscortDocumentFee}
+            setEscortDocumentFee={setConstructionEscortDocumentFee}
+            workingCapitalIssuanceFee={constructionWorkingCapitalIssuanceFee}
+            setWorkingCapitalIssuanceFee={setConstructionWorkingCapitalIssuanceFee}
             legalAndControlFees={constructionLegalAndControlFees}
             setLegalAndControlFees={setConstructionLegalAndControlFees}
             onOpenCreditProducts={() => setIsConstructionCreditModalOpen(true)}
