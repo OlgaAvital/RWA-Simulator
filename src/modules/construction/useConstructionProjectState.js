@@ -1,5 +1,10 @@
 import { useState } from "react";
 
+const defaultConstructionUtilization = Object.fromEntries(
+  Array.from({ length: 16 }, (_, index) => [`utilH${index + 1}Pct`, index < 6 ? Number((((index + 1) / 6) * 100).toFixed(2)) : 100])
+);
+const zeroConstructionUtilization = Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`utilH${index + 1}Pct`, 0]));
+
 export function useConstructionProjectState() {
   const [constructionLandMonths, setConstructionLandMonths] = useState(24);
   const [constructionBuildMonths, setConstructionBuildMonths] = useState(36);
@@ -17,6 +22,9 @@ export function useConstructionProjectState() {
   const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(180);
   const [constructionSetupFeePct, setConstructionSetupFeePct] = useState(0.45);
   const [constructionProjectManagementFee, setConstructionProjectManagementFee] = useState(0);
+  const [constructionLandDocumentFee, setConstructionLandDocumentFee] = useState(0);
+  const [constructionEscortDocumentFee, setConstructionEscortDocumentFee] = useState(0);
+  const [constructionWorkingCapitalIssuanceFee, setConstructionWorkingCapitalIssuanceFee] = useState(0);
   const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(240);
   const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(25000);
   const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(100);
@@ -60,18 +68,7 @@ export function useConstructionProjectState() {
       ccfUndrawn: 0,
       riskWeight: 100,
       repaymentPriority: 1,
-      drawQ1Pct: 8.33,
-      drawQ2Pct: 8.33,
-      drawQ3Pct: 8.33,
-      drawQ4Pct: 8.33,
-      drawQ5Pct: 8.33,
-      drawQ6Pct: 8.33,
-      drawQ7Pct: 8.33,
-      drawQ8Pct: 8.33,
-      drawQ9Pct: 8.33,
-      drawQ10Pct: 8.33,
-      drawQ11Pct: 8.33,
-      drawQ12Pct: 8.37,
+      ...defaultConstructionUtilization,
     },
     {
       id: 3,
@@ -85,18 +82,7 @@ export function useConstructionProjectState() {
       riskWeight: 100,
       balloonAtEnd: true,
       repaymentPriority: 2,
-      drawQ1Pct: 0,
-      drawQ2Pct: 0,
-      drawQ3Pct: 0,
-      drawQ4Pct: 0,
-      drawQ5Pct: 0,
-      drawQ6Pct: 0,
-      drawQ7Pct: 0,
-      drawQ8Pct: 0,
-      drawQ9Pct: 0,
-      drawQ10Pct: 0,
-      drawQ11Pct: 0,
-      drawQ12Pct: 0,
+      ...zeroConstructionUtilization,
     },
   ]);
 
@@ -133,6 +119,12 @@ export function useConstructionProjectState() {
     setConstructionSetupFeePct,
     constructionProjectManagementFee,
     setConstructionProjectManagementFee,
+    constructionLandDocumentFee,
+    setConstructionLandDocumentFee,
+    constructionEscortDocumentFee,
+    setConstructionEscortDocumentFee,
+    constructionWorkingCapitalIssuanceFee,
+    setConstructionWorkingCapitalIssuanceFee,
     constructionLegalAndControlFees,
     setConstructionLegalAndControlFees,
     constructionCompletionGuaranteeLimit,
