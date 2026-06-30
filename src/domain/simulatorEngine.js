@@ -1641,7 +1641,10 @@ function getConstructionUtilizationPct(product, month, landMonths) {
   if (constructionMonth < 1) return 0;
   const halfYearIndex = Math.ceil(constructionMonth / 6) - 1;
   const field = CONSTRUCTION_UTILIZATION_FIELDS[halfYearIndex]?.field;
-  if (!field) return clampNumber(product[CONSTRUCTION_UTILIZATION_FIELDS.at(-1).field] ?? 0, 0, 100) / 100;
+  if (!field) {
+    const lastField = CONSTRUCTION_UTILIZATION_FIELDS[CONSTRUCTION_UTILIZATION_FIELDS.length - 1].field;
+    return clampNumber(product[lastField] ?? 0, 0, 100) / 100;
+  }
   return clampNumber(product[field] ?? 0, 0, 100) / 100;
 }
 

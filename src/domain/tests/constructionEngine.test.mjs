@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import {
   calculateConstructionProjectForecast,
+  calculateInfrastructureProjectForecast,
   createDefaultConstructionCreditProducts,
-} from "../construction/constructionEngine.js";
+} from "../simulatorEngine.js";
+import { CONSTRUCTION_UTILIZATION_FIELDS } from "../construction/constructionEngine.js";
 
 function findFirstRowAfterStage(forecast, stage) {
   return forecast.rows.find((row) => row.stage === stage);
 }
+
+assert.equal(CONSTRUCTION_UTILIZATION_FIELDS[0].field, "utilH1Pct", "construction module bridge should export utilization fields for merged imports");
 
 const defaultProducts = createDefaultConstructionCreditProducts({
   totalCost: 420_000,
@@ -97,5 +101,16 @@ const utilizationRow = utilizationWithSaleLawForecast.rows[0];
 assert.equal(utilizationRow.loanOutstanding, 800, "80% utilization on a 1,000 loan frame should create 800 utilized credit");
 assert.equal(utilizationRow.saleLawGuaranteeOutstanding, 600, "issued sale-law guarantees should be included alongside loan utilization");
 assert.equal(utilizationRow.undrawnLoan, 100, "undrawn real-estate loan frame should be residual project frame: 1,500 - 800 - 600 = 100");
+
+const infrastructureSmokeForecast = calculateInfrastructureProjectForecast({
+  projectYears: 25,
+  constructionYears: 4,
+  rampUpYears: 2,
+  projectCurrency: "ILS",
+  projectTotalScope: 1_000_000,
+  bankSharePct: 40,
+  products: [],
+});
+assert.equal(infrastructureSmokeForecast.rows.length, 25, "infrastructure forecast should initialize for app preview without construction-only references");
 
 console.log("Construction engine tests passed");
