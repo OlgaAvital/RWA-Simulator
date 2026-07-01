@@ -162,7 +162,49 @@ export function PrintPreviewModal({ clientName, dealName, viewMode, result, prod
               </PrintCard>
             </div>
 
+            {viewMode === "existingPlusNew" && (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="bg-slate-900 px-3 py-2 text-sm font-bold text-white">סיכום מצב קיים, תוספת עסקה חדשה וסה״כ ללקוח</div>
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 text-slate-600">
+                    <tr>
+                      <th className="p-2 text-right">רכיב</th>
+                      <th className="p-2 text-right">EAD</th>
+                      <th className="p-2 text-right">RWA</th>
+                      <th className="p-2 text-right">הכנסות לשנה</th>
+                      <th className="p-2 text-right">תשואה לשנה על RWA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <PrintExistingPlusNewRow
+                      label="מצב קיים"
+                      ead={result.existingEad}
+                      rwa={result.existingRwa}
+                      income={result.existingAnnualIncome}
+                      returnOnRwa={result.existingReturnOnRwa}
+                    />
+                    <PrintExistingPlusNewRow
+                      label="תוספת מוצרים חדשים"
+                      ead={result.incrementalEad}
+                      rwa={result.incrementalRwa}
+                      income={result.incrementalAnnualIncome}
+                      returnOnRwa={result.returnOnRwaAfter}
+                    />
+                    <PrintExistingPlusNewRow
+                      label="סה״כ מצב קיים + עסקה חדשה"
+                      ead={result.totalEadAfterNewDeal}
+                      rwa={result.totalRwaAfterNewDeal}
+                      income={result.totalAnnualIncomeAfterNewDeal}
+                      returnOnRwa={result.totalReturnOnRwaAfterNewDeal}
+                      emphasized
+                    />
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">פירוט מוצרי העסקה החדשה</div>
               <table className="w-full text-xs">
                 <thead className="bg-slate-100 text-slate-600">
                   <tr>
@@ -438,6 +480,19 @@ export function PrintCard({ title, children }) {
       <h3 className="mb-2 text-base font-bold">{title}</h3>
       <div className="space-y-1">{children}</div>
     </div>
+  );
+}
+
+
+export function PrintExistingPlusNewRow({ label, ead, rwa, income, returnOnRwa, emphasized = false }) {
+  return (
+    <tr className={`border-t ${emphasized ? "bg-orange-50 font-bold text-orange-900" : ""}`}>
+      <td className="p-2">{label}</td>
+      <td className="p-2">{formatM(ead)}</td>
+      <td className="p-2">{formatM(rwa)}</td>
+      <td className="p-2">{formatM(income, 2)}</td>
+      <td className="p-2">{Number(returnOnRwa || 0).toFixed(2)}%</td>
+    </tr>
   );
 }
 
