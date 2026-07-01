@@ -37,6 +37,7 @@ import {
   CONSTRUCTION_REGULATORY_CHECKS,
   CONSTRUCTION_SALES_SCENARIOS,
   calculateInfrastructureFees,
+  calculateLoanDurationYearsFromType,
   createDefaultConstructionCreditProducts,
   clampNumber,
   convertIlsToInfraCurrency,
@@ -161,7 +162,49 @@ export function PrintPreviewModal({ clientName, dealName, viewMode, result, prod
               </PrintCard>
             </div>
 
+            {viewMode === "existingPlusNew" && (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="bg-slate-900 px-3 py-2 text-sm font-bold text-white">סיכום מצב קיים, תוספת עסקה חדשה וסה״כ ללקוח</div>
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 text-slate-600">
+                    <tr>
+                      <th className="p-2 text-right">רכיב</th>
+                      <th className="p-2 text-right">EAD</th>
+                      <th className="p-2 text-right">RWA</th>
+                      <th className="p-2 text-right">הכנסות לשנה</th>
+                      <th className="p-2 text-right">תשואה לשנה על RWA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <PrintExistingPlusNewRow
+                      label="מצב קיים"
+                      ead={result.existingEad}
+                      rwa={result.existingRwa}
+                      income={result.existingAnnualIncome}
+                      returnOnRwa={result.existingReturnOnRwa}
+                    />
+                    <PrintExistingPlusNewRow
+                      label="תוספת מוצרים חדשים"
+                      ead={result.incrementalEad}
+                      rwa={result.incrementalRwa}
+                      income={result.incrementalAnnualIncome}
+                      returnOnRwa={result.returnOnRwaAfter}
+                    />
+                    <PrintExistingPlusNewRow
+                      label="סה״כ מצב קיים + עסקה חדשה"
+                      ead={result.totalEadAfterNewDeal}
+                      rwa={result.totalRwaAfterNewDeal}
+                      income={result.totalAnnualIncomeAfterNewDeal}
+                      returnOnRwa={result.totalReturnOnRwaAfterNewDeal}
+                      emphasized
+                    />
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">פירוט מוצרי העסקה החדשה</div>
               <table className="w-full text-xs">
                 <thead className="bg-slate-100 text-slate-600">
                   <tr>
@@ -437,6 +480,19 @@ export function PrintCard({ title, children }) {
       <h3 className="mb-2 text-base font-bold">{title}</h3>
       <div className="space-y-1">{children}</div>
     </div>
+  );
+}
+
+
+export function PrintExistingPlusNewRow({ label, ead, rwa, income, returnOnRwa, emphasized = false }) {
+  return (
+    <tr className={`border-t ${emphasized ? "bg-orange-50 font-bold text-orange-900" : ""}`}>
+      <td className="p-2">{label}</td>
+      <td className="p-2">{formatM(ead)}</td>
+      <td className="p-2">{formatM(rwa)}</td>
+      <td className="p-2">{formatM(income, 2)}</td>
+      <td className="p-2">{Number(returnOnRwa || 0).toFixed(2)}%</td>
+    </tr>
   );
 }
 
@@ -891,8 +947,22 @@ export function ProductsModal({ products, setProducts, analysis, onBeforeChange,
                                 <option value="equalPrincipal">קרן שווה</option>
                                 <option value="spitzer">שפיצר</option>
                                 <option value="grace">גרייס</option>
+                                <option value="adjusted">לוח סילוקין מותאם</option>
                               </select>
                             </FieldBox>
+                            {row.amortizationType === "adjusted" && (
+                              <FieldBox title="סילוקין לפי שנים">
+                                <MonthsCell
+                                  value={row.amortizationTermMonths ?? row.termMonths ?? 180}
+                                  min={row.termMonthsForCalc || 12}
+                                  max={420}
+                                  onChange={(v) => updateProduct(row.id, "amortizationTermMonths", clampNumber(v, row.termMonthsForCalc || 12, 420))}
+                                  onBlur={(v) => updateProduct(row.id, "amortizationTermMonths", clampNumber(v || row.termMonthsForCalc || 12, row.termMonthsForCalc || 12, 420))}
+                                />
+                                <div className="mt-1 text-[11px] text-slate-400">בסוף תקופת ההלוואה היתרה נפרעת כבלון</div>
+                              </FieldBox>
+                            )}
+                            <ReadOnlyBox title="מח״מ הלוואה" value={`${((row.loanDurationMonths || 0) / 12).toFixed(2)} שנים`} tone="sky" />
                             <ReadOnlyBox title="יתרה ממוצעת ל-RWA" value={formatK(row.rwaUtilizedExposure)} tone="sky" />
                             <ReadOnlyBox title="ניצול צפוי" value={formatK(row.utilizedAmount)} />
                             <ReadOnlyBox title="לא מנוצל" value={formatK(row.undrawnAmount)} />
@@ -1214,6 +1284,7 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                                 <option value="balloon">בלון</option>
                                 <option value="grace">גרייס ואז שפיצר</option>
                                 <option value="custom">מיוחד</option>
+                                <option value="adjusted">לוח סילוקין מותאם</option>
                               </select>
                             </FieldBox>
 
@@ -1257,6 +1328,21 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                                 <div className="mt-1 text-[11px] text-slate-500">ריבית לקוח לא מנוצל: {((Number(product.undrawnCustomerRate) || 0)).toFixed(2)}%</div>
                               </FieldBox>
                             )}
+
+                            {product.amortizationType === "adjusted" && (
+                              <FieldBox title="סילוקין לפי שנים">
+                                <MonthsCell
+                                  value={Math.round((product.amortizationTermYears ?? 15) * 12)}
+                                  min={Math.round((product.termYears ?? 1) * 12)}
+                                  max={420}
+                                  onChange={(v) => updateProduct(product.id, "amortizationTermYears", clampNumber(v, Math.round((product.termYears ?? 1) * 12), 420) / 12)}
+                                  onBlur={(v) => updateProduct(product.id, "amortizationTermYears", clampNumber(v || Math.round((product.termYears ?? 1) * 12), Math.round((product.termYears ?? 1) * 12), 420) / 12)}
+                                />
+                                <div className="mt-1 text-[11px] text-slate-400">הפירעון השוטף לפי תקופה ארוכה יותר, והיתרה נפרעת כבלון בתום ההלוואה</div>
+                              </FieldBox>
+                            )}
+
+                            <ReadOnlyBox title="מח״מ הלוואה" value={`${calculateLoanDurationYearsFromType(product.termYears, product.amortizationType || "equalPrincipal", product.amortizationTermYears).toFixed(2)} שנים`} tone="sky" />
 
                             {product.amortizationType === "grace" && (
                               <FieldBox title="גרייס, חודשים">
@@ -2530,7 +2616,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                     <td className="p-3"><NumberCell value={product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">עלות גיוס: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}%</div>}</td>
+                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}% · מרווח + מחיר צל = ריבית ללקוח</div>}</td>
                     {visibleUtilizationFields.map(({ field }) => (
                       <td key={field} className="p-3">
                         <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
