@@ -1207,10 +1207,12 @@ export function calculateInfrastructureProjectForecast(input) {
     };
   });
 
-  const productRwaTotals = {};
   rows.forEach((row) => {
-    row.productRwaDetails = creditProducts.map((product) => ({ name: product.name, averageRwa: row.loanRwa * ((Math.max(product.amount || 0, product.limit || 0)) / Math.max(totalLoanFacility, 1)) }));
-    row.productRwaDetails.forEach((detail) => { productRwaTotals[detail.name] = (productRwaTotals[detail.name] || 0) + detail.averageRwa; });
+    const totalProductEad = row.productDetails.reduce((sum, detail) => sum + detail.ead, 0);
+    row.productRwaDetails = row.productDetails.map((detail) => ({
+      name: detail.productName,
+      averageRwa: totalProductEad > 0 ? row.rwa * (detail.ead / totalProductEad) : 0,
+    }));
   });
   const totalIncome = rows.reduce((sum, row) => sum + row.totalIncome, 0);
   const totalProductFeeIncome = rows.reduce((sum, row) => sum + row.productFeeIncome, 0);
