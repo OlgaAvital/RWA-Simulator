@@ -37,6 +37,7 @@ import {
   CONSTRUCTION_REGULATORY_CHECKS,
   CONSTRUCTION_SALES_SCENARIOS,
   calculateInfrastructureFees,
+  calculateLoanDurationYearsFromType,
   createDefaultConstructionCreditProducts,
   clampNumber,
   convertIlsToInfraCurrency,
@@ -891,8 +892,22 @@ export function ProductsModal({ products, setProducts, analysis, onBeforeChange,
                                 <option value="equalPrincipal">קרן שווה</option>
                                 <option value="spitzer">שפיצר</option>
                                 <option value="grace">גרייס</option>
+                                <option value="adjusted">לוח סילוקין מותאם</option>
                               </select>
                             </FieldBox>
+                            {row.amortizationType === "adjusted" && (
+                              <FieldBox title="סילוקין לפי שנים">
+                                <MonthsCell
+                                  value={row.amortizationTermMonths ?? row.termMonths ?? 180}
+                                  min={row.termMonthsForCalc || 12}
+                                  max={420}
+                                  onChange={(v) => updateProduct(row.id, "amortizationTermMonths", clampNumber(v, row.termMonthsForCalc || 12, 420))}
+                                  onBlur={(v) => updateProduct(row.id, "amortizationTermMonths", clampNumber(v || row.termMonthsForCalc || 12, row.termMonthsForCalc || 12, 420))}
+                                />
+                                <div className="mt-1 text-[11px] text-slate-400">בסוף תקופת ההלוואה היתרה נפרעת כבלון</div>
+                              </FieldBox>
+                            )}
+                            <ReadOnlyBox title="מח״מ הלוואה" value={`${((row.loanDurationMonths || 0) / 12).toFixed(2)} שנים`} tone="sky" />
                             <ReadOnlyBox title="יתרה ממוצעת ל-RWA" value={formatK(row.rwaUtilizedExposure)} tone="sky" />
                             <ReadOnlyBox title="ניצול צפוי" value={formatK(row.utilizedAmount)} />
                             <ReadOnlyBox title="לא מנוצל" value={formatK(row.undrawnAmount)} />
@@ -1214,6 +1229,7 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                                 <option value="balloon">בלון</option>
                                 <option value="grace">גרייס ואז שפיצר</option>
                                 <option value="custom">מיוחד</option>
+                                <option value="adjusted">לוח סילוקין מותאם</option>
                               </select>
                             </FieldBox>
 
@@ -1257,6 +1273,21 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                                 <div className="mt-1 text-[11px] text-slate-500">ריבית לקוח לא מנוצל: {((Number(product.undrawnCustomerRate) || 0)).toFixed(2)}%</div>
                               </FieldBox>
                             )}
+
+                            {product.amortizationType === "adjusted" && (
+                              <FieldBox title="סילוקין לפי שנים">
+                                <MonthsCell
+                                  value={Math.round((product.amortizationTermYears ?? 15) * 12)}
+                                  min={Math.round((product.termYears ?? 1) * 12)}
+                                  max={420}
+                                  onChange={(v) => updateProduct(product.id, "amortizationTermYears", clampNumber(v, Math.round((product.termYears ?? 1) * 12), 420) / 12)}
+                                  onBlur={(v) => updateProduct(product.id, "amortizationTermYears", clampNumber(v || Math.round((product.termYears ?? 1) * 12), Math.round((product.termYears ?? 1) * 12), 420) / 12)}
+                                />
+                                <div className="mt-1 text-[11px] text-slate-400">הפירעון השוטף לפי תקופה ארוכה יותר, והיתרה נפרעת כבלון בתום ההלוואה</div>
+                              </FieldBox>
+                            )}
+
+                            <ReadOnlyBox title="מח״מ הלוואה" value={`${calculateLoanDurationYearsFromType(product.termYears, product.amortizationType || "equalPrincipal", product.amortizationTermYears).toFixed(2)} שנים`} tone="sky" />
 
                             {product.amortizationType === "grace" && (
                               <FieldBox title="גרייס, חודשים">
@@ -2530,7 +2561,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                     <td className="p-3"><NumberCell value={product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">עלות גיוס: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}%</div>}</td>
+                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}% · מרווח + מחיר צל = ריבית ללקוח</div>}</td>
                     {visibleUtilizationFields.map(({ field }) => (
                       <td key={field} className="p-3">
                         <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />

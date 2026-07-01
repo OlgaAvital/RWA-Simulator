@@ -501,9 +501,10 @@ export function isRiskSaleProduct(productType) {
   return rule.incomeMode === "riskTransfer";
 }
 
-export function calculateLoanMonthlyBalances(principal, termMonths, amortizationType, annualRate) {
+export function calculateLoanMonthlyBalances(principal, termMonths, amortizationType, annualRate, amortizationTermMonths = termMonths) {
   const p = Math.max(0, Number(principal) || 0);
   const n = Math.max(1, Math.round(Number(termMonths) || 1));
+  const scheduleN = Math.max(n, Math.round(Number(amortizationTermMonths) || n));
   const monthsToMeasure = Math.min(12, n);
   if (p <= 0) return [];
 
@@ -514,9 +515,9 @@ export function calculateLoanMonthlyBalances(principal, termMonths, amortization
   const balances = [];
   let balance = p;
 
-  if (amortizationType === "spitzer") {
+  if (amortizationType === "spitzer" || amortizationType === "adjusted") {
     const monthlyRate = Math.max(0, Number(annualRate) || 0) / 100 / 12;
-    const payment = monthlyRate > 0 ? (p * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -n)) : p / n;
+    const payment = monthlyRate > 0 ? (p * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -scheduleN)) : p / scheduleN;
     for (let month = 0; month < monthsToMeasure; month += 1) {
       balances.push(balance);
       const interest = balance * monthlyRate;
@@ -524,7 +525,7 @@ export function calculateLoanMonthlyBalances(principal, termMonths, amortization
       balance = Math.max(0, balance - principalPayment);
     }
   } else {
-    const principalPayment = p / n;
+    const principalPayment = p / (amortizationType === "adjusted" ? scheduleN : n);
     for (let month = 0; month < monthsToMeasure; month += 1) {
       balances.push(balance);
       balance = Math.max(0, balance - principalPayment);
@@ -538,8 +539,45 @@ export function average(values) {
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
-export function calculateAverageLoanBalance(principal, termMonths, amortizationType, annualRate) {
-  return average(calculateLoanMonthlyBalances(principal, termMonths, amortizationType, annualRate));
+export function calculateAverageLoanBalance(principal, termMonths, amortizationType, annualRate, amortizationTermMonths = termMonths) {
+  return average(calculateLoanMonthlyBalances(principal, termMonths, amortizationType, annualRate, amortizationTermMonths));
+}
+
+export function calculateLoanDurationMonths(principal, termMonths, amortizationType, annualRate, amortizationTermMonths = termMonths) {
+  const p = Math.max(0, Number(principal) || 0);
+  const n = Math.max(1, Math.round(Number(termMonths) || 1));
+  if (p <= 0) return 0;
+  if (amortizationType === "grace" || amortizationType === "balloon") return n;
+  const scheduleN = Math.max(n, Math.round(Number(amortizationTermMonths) || n));
+  const monthlyRate = Math.max(0, Number(annualRate) || 0) / 100 / 12;
+  let balance = p;
+  let weighted = 0;
+  let paid = 0;
+  if (amortizationType === "spitzer" || amortizationType === "adjusted") {
+    const payment = monthlyRate > 0 ? (p * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -scheduleN)) : p / scheduleN;
+    for (let month = 1; month <= n; month += 1) {
+      const principalPayment = month === n ? balance : Math.min(balance, Math.max(0, payment - balance * monthlyRate));
+      weighted += principalPayment * month;
+      paid += principalPayment;
+      balance = Math.max(0, balance - principalPayment);
+    }
+  } else {
+    const regularPrincipal = p / n;
+    for (let month = 1; month <= n; month += 1) {
+      const principalPayment = month === n ? balance : Math.min(balance, regularPrincipal);
+      weighted += principalPayment * month;
+      paid += principalPayment;
+      balance = Math.max(0, balance - principalPayment);
+    }
+  }
+  return paid > 0 ? weighted / paid : 0;
+}
+
+
+export function calculateLoanDurationYearsFromType(termYears, amortizationType, amortizationTermYears = termYears) {
+  const n = Math.max(1, Math.round((Number(termYears) || 1) * 12));
+  const scheduleN = Math.max(n, Math.round((Number(amortizationTermYears) || Number(termYears) || 1) * 12));
+  return calculateLoanDurationMonths(1, n, amortizationType, 0, scheduleN) / 12;
 }
 
 export function calculateSyndicationEffect(monthlyBalances, saleEnabled, saleMonth, salePct, buyerSpread) {
@@ -614,7 +652,7 @@ export function calculateProductRows(products) {
     const termMonthsForCalc = isLongTermLoan ? Math.max(12, Math.round(Number(enteredTermMonths) || 60)) : null;
     const amortizationType = isLongTermLoan ? product.amortizationType || "equalPrincipal" : null;
     const monthlyBalances = isLongTermLoan
-      ? calculateLoanMonthlyBalances(utilizedAmount, termMonthsForCalc, amortizationType, margin)
+      ? calculateLoanMonthlyBalances(utilizedAmount, termMonthsForCalc, amortizationType, margin, product.amortizationTermMonths)
       : Array.from({ length: 12 }, () => utilizedAmount);
     const syndication = calculateSyndicationEffect(
       monthlyBalances,
@@ -635,6 +673,7 @@ export function calculateProductRows(products) {
     const riskSaleSpread = riskSaleBuyerPrice;
     const riskSaleCost = riskSaleSaleAmount * (riskSaleBuyerPrice / 100) * riskSaleYearFactor;
     const ead = isRiskSale ? 0 : utilizedEad + undrawnEad;
+    const loanDurationMonths = isLongTermLoan ? calculateLoanDurationMonths(utilizedAmount, termMonthsForCalc, amortizationType, margin, product.amortizationTermMonths) : 0;
     const grossAnnualIncome = isInterestBearing ? utilizedAmount * (margin / 100) : feeRate > 0 ? limit * (feeRate / 100) : 0;
     const annualIncome = isRiskSale ? -riskSaleCost : Math.max(0, grossAnnualIncome - syndication.annualSyndicationCost);
 
@@ -659,6 +698,7 @@ export function calculateProductRows(products) {
       termMonthsForCalc,
       amortizationType,
       monthlyBalances,
+      loanDurationMonths,
       rwaUtilizedExposure,
       syndicationEnabled: Boolean(product.syndicationEnabled),
       syndicationSaleMonth: syndication.saleMonth,
@@ -822,6 +862,11 @@ export function getInfraProductRepayment(openingOutstanding, product, year, proj
 
   if (year < effectiveRepaymentStartYear) return 0;
   if (type === "balloon") return year >= loanEndYear ? openingOutstanding : 0;
+  if (type === "adjusted") {
+    const scheduleYears = Math.max(1, Math.round(Number(product.amortizationTermYears || product.termYears) || 1));
+    const stageYear = Math.max(1, year - stageStartYear + 1);
+    return year >= loanEndYear ? openingOutstanding : Math.min(openingOutstanding, openingOutstanding / Math.max(1, scheduleYears - stageYear + 1));
+  }
   if (type === "custom") {
     const pct = Math.max(0, Number(product.customRepaymentPct) || 0) / 100;
     return Math.min(openingOutstanding, openingOutstanding * pct);
