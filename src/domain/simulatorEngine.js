@@ -55,17 +55,17 @@ export const INFRA_PRODUCT_TYPES = {
     isLoan: true,
     isPhasedLoan: false,
     defaultCcf: 100,
-    defaultCcfUndrawn: 40,
+    defaultCcfUndrawn: 50,
     note: "הלוואה ארוכה לפרויקט, עם לוח סילוקין ותקופה.",
   },
   infraPhasedLoan: {
-    label: "הלוואה בפעימות",
+    label: "הלוואת הקמה",
     incomeMode: "interest",
     isLoan: true,
     isPhasedLoan: true,
     defaultCcf: 100,
-    defaultCcfUndrawn: 40,
-    note: "הלוואה מיוחדת שמועמדת עד 8 פעימות, בתדירות רבעונית או שנתית.",
+    defaultCcfUndrawn: 50,
+    note: "הלוואת הקמה שמועמדת בפעימות שנתיות לפי תקופת ההלוואה.",
   },
   infraShortTermLoan: {
     label: "הלוואת ט״ק",
@@ -73,7 +73,7 @@ export const INFRA_PRODUCT_TYPES = {
     isLoan: true,
     isPhasedLoan: false,
     defaultCcf: 100,
-    defaultCcfUndrawn: 40,
+    defaultCcfUndrawn: 50,
     note: "הלוואה קצרה/גישור בתקופת הקמה או עד closing פיננסי.",
   },
   infraPerformanceGuarantee: {
@@ -115,7 +115,6 @@ export const INFRA_PRODUCT_TYPES = {
 
 export const INFRA_PRODUCT_STAGES = {
   construction: { label: "מוצרי אשראי בהקמה", shortLabel: "הקמה", tone: "orange" },
-  rampUp: { label: "מוצרי אשראי בהרצה", shortLabel: "הרצה", tone: "sky" },
   operation: { label: "מוצרי אשראי בהפעלה", shortLabel: "הפעלה", tone: "green" },
 };
 
@@ -809,14 +808,8 @@ export function getInfraProductDrawdownPct(product, year, constructionYears = 0,
   const rule = INFRA_PRODUCT_TYPES[product.productType] || INFRA_PRODUCT_TYPES.infraLongTermLoan;
 
   if (rule.isPhasedLoan) {
-    const pulses = INFRA_PULSE_FIELDS.map(({ field }) => Number(product[field] ?? 0) || 0);
-    const frequency = product.pulseFrequency || "annual";
-    if (frequency === "quarterly") {
-      const firstPulseIndex = (relativeYear - 1) * 4;
-      const yearPulses = pulses.slice(firstPulseIndex, firstPulseIndex + 4);
-      return yearPulses.reduce((sum, pct) => sum + pct, 0) / 100;
-    }
-    if (relativeYear >= 1 && relativeYear <= pulses.length) return pulses[relativeYear - 1] / 100;
+    const pulseCount = Math.max(1, Math.floor(Number(product.termYears) || 1));
+    if (relativeYear >= 1 && relativeYear <= pulseCount) return 1 / pulseCount;
     return 0;
   }
 
@@ -824,10 +817,13 @@ export function getInfraProductDrawdownPct(product, year, constructionYears = 0,
 }
 
 export function getInfraPhasedLoanFinalPulseYear(product) {
+  if (INFRA_PRODUCT_TYPES[product.productType]?.isPhasedLoan) {
+    return Math.max(1, Math.floor(Number(product.termYears) || 1));
+  }
   const pulses = INFRA_PULSE_FIELDS.map(({ field }) => Number(product[field] ?? 0) || 0);
   const lastPulseIndex = pulses.reduce((lastIndex, pct, index) => (pct > 0 ? index : lastIndex), -1);
   if (lastPulseIndex < 0) return 0;
-  return (product.pulseFrequency || "annual") === "quarterly" ? Math.ceil((lastPulseIndex + 1) / 4) : lastPulseIndex + 1;
+  return lastPulseIndex + 1;
 }
 
 export function isInfraPhasedLoanAfterFinalPulse(product, year, constructionYears = 0, rampUpYears = 0) {
@@ -990,7 +986,19 @@ export function calculateInfrastructureProjectForecast(input) {
   const projectFx = getInfraFxRate(projectCurrency, currency.lastKnownRate);
   const products = input.products || [];
   const projectTotalScope = Math.max(0, Number(input.projectTotalScope) || 0) * projectFx;
-  const bankSharePct = clampNumber(input.bankSharePct ?? 100, 0, 100);
+  const constructionProducts = products.filter((product) => (product.stage || "construction") === "construction");
+  const constructionCreditTotal = constructionProducts.reduce((sum, product) => {
+    const productCurrency = product.currency || projectCurrency;
+    const fx = getInfraFxRate(productCurrency, product.fxRate);
+    return sum + Math.max(0, Number(product.amount) || 0) * fx;
+  }, 0);
+  const constructionBankCreditTotal = constructionProducts.filter((product) => (product.lenderType || "bank") === "bank").reduce((sum, product) => {
+    const productCurrency = product.currency || projectCurrency;
+    const fx = getInfraFxRate(productCurrency, product.fxRate);
+    return sum + Math.max(0, Number(product.amount) || 0) * fx;
+  }, 0);
+  const calculatedBankSharePct = constructionCreditTotal > 0 ? (constructionBankCreditTotal / constructionCreditTotal) * 100 : 0;
+  const bankSharePct = calculatedBankSharePct;
   const bankShareAmount = projectTotalScope * (bankSharePct / 100);
   const organizedByBank = input.organizedByBank !== false;
   const arrangerName = organizedByBank ? "הבנק" : input.arrangerName || "גוף מארגן אחר";
@@ -1010,7 +1018,7 @@ export function calculateInfrastructureProjectForecast(input) {
   const firstYearAdditionalIncome = annualAdditionalIncome;
   const securitiesAnalysis = calculateEligibleSecurities(input.securities || []);
   const guaranteeAnalysis = calculateInfrastructureGuarantees(input.guarantees || []);
-  const constructionRiskWeight = Math.max(0, Number(input.constructionRiskWeight) || 150);
+  const constructionRiskWeight = Math.max(0, Number(input.constructionRiskWeight) || 100);
   const operatingRiskWeight = Math.max(0, Number(input.operatingRiskWeight) || 100);
   const repaymentStartYear = Math.max(1, Math.round(Number(input.repaymentStartYear) || constructionYears + rampUpYears + 1));
 
@@ -1219,8 +1227,19 @@ export function calculateInfrastructureProjectForecast(input) {
   const totalAdditionalIncome = rows.reduce((sum, row) => sum + row.additionalIncome, 0);
   const discountedIncome = rows.reduce((sum, row) => sum + row.discountedIncome, 0);
   const averageAnnualIncome = totalIncome / years;
+  const averageTotalExposure = rows.reduce((sum, row) => sum + row.totalExposure, 0) / years;
   const averageRwa = rows.reduce((sum, row) => sum + row.rwa, 0) / years;
   const averageReturnOnRwa = averageRwa > 0 ? (averageAnnualIncome / averageRwa) * 100 : 0;
+  const constructionRows = rows.filter((row) => row.year <= constructionYears);
+  const operationRows = rows.filter((row) => row.year > constructionYears + rampUpYears);
+  const averageReturnForRows = (periodRows) => {
+    const divisor = Math.max(1, periodRows.length);
+    const income = periodRows.reduce((sum, row) => sum + row.totalIncome, 0) / divisor;
+    const rwa = periodRows.reduce((sum, row) => sum + row.rwa, 0) / divisor;
+    return rwa > 0 ? (income / rwa) * 100 : 0;
+  };
+  const constructionReturnOnRwa = averageReturnForRows(constructionRows);
+  const averageOperationReturnOnRwa = averageReturnForRows(operationRows);
   const peakExposure = rows.reduce((max, row) => Math.max(max, row.totalExposure), 0);
   const peakProjectExposure = rows.reduce((max, row) => Math.max(max, row.projectTotalExposure), 0);
   const peakRwa = rows.reduce((max, row) => Math.max(max, row.rwa), 0);
@@ -1246,6 +1265,8 @@ export function calculateInfrastructureProjectForecast(input) {
     projectCurrency,
     projectTotalScope,
     bankSharePct,
+    constructionBankCreditTotal,
+    constructionCreditTotal,
     bankShareAmount,
     organizedByBank,
     arrangerName,
@@ -1270,8 +1291,11 @@ export function calculateInfrastructureProjectForecast(input) {
     totalIncome,
     discountedIncome,
     averageAnnualIncome,
+    averageTotalExposure,
     averageRwa,
     averageReturnOnRwa,
+    constructionReturnOnRwa,
+    averageOperationReturnOnRwa,
     peakExposure,
     peakProjectExposure,
     peakRwa,
@@ -1808,7 +1832,7 @@ export function calculateConstructionProjectForecast(input = {}) {
       limit: Math.max(0, Number(product.limit ?? product.amount) || 0),
       margin: Math.max(0, Number(product.margin ?? loanMargin) || 0),
       customerInterest: Math.max(0, Number(product.customerInterest ?? product.margin ?? loanMargin) || 0),
-      ccfUndrawn: clampNumber(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 40, 0, 100),
+      ccfUndrawn: clampNumber(product.ccfUndrawn ?? rule.defaultCcfUndrawn ?? 50, 0, 100),
       riskWeight: Math.max(0, Number(product.riskWeight ?? rule.defaultRiskWeight ?? constructionRiskWeight) || 0),
       balloonAtEnd: product.balloonAtEnd ?? rule.defaultBalloonAtEnd ?? false,
       repaymentPriority: Math.max(1, Math.round(Number(product.repaymentPriority ?? (rule.isMezzanine ? 2 : 1)) || 1)),
