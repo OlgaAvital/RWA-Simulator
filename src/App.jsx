@@ -133,7 +133,7 @@ export default function RwaReturnSimulator() {
       lenderType: "bank",
       lenderName: "הבנק",
       ccf: 100,
-      ccfUndrawn: 40,
+      ccfUndrawn: 50,
       utilizationPct: 100,
       facilityMode: "standalone",
       termYears: 6,
@@ -207,7 +207,7 @@ export default function RwaReturnSimulator() {
       maturityMatch: true,
     },
   ]);
-  const [infraConstructionRiskWeight, setInfraConstructionRiskWeight] = useState(150);
+  const [infraConstructionRiskWeight, setInfraConstructionRiskWeight] = useState(100);
   const [infraOperatingRiskWeight, setInfraOperatingRiskWeight] = useState(100);
   const [infraRepaymentStartYear, setInfraRepaymentStartYear] = useState(7);
 
@@ -292,7 +292,7 @@ export default function RwaReturnSimulator() {
       limit: 80000,
       expectedUtilizationPct: 75,
       ccfUtilized: 100,
-      ccfUndrawn: 40,
+      ccfUndrawn: 50,
       margin: 2.2,
       facilityMode: "standalone",
       termMonths: 12,
@@ -465,7 +465,7 @@ export default function RwaReturnSimulator() {
     setInfraProducts(snapshot.infraProducts || []);
     setInfraSecurities(snapshot.infraSecurities || []);
     setInfraGuarantees(snapshot.infraGuarantees || []);
-    setInfraConstructionRiskWeight(snapshot.infraConstructionRiskWeight || 150);
+    setInfraConstructionRiskWeight(snapshot.infraConstructionRiskWeight || 100);
     setInfraOperatingRiskWeight(snapshot.infraOperatingRiskWeight || 100);
     setInfraRepaymentStartYear(snapshot.infraRepaymentStartYear || 7);
     setConstructionLandMonths(snapshot.constructionLandMonths ?? 24);
@@ -558,7 +558,7 @@ export default function RwaReturnSimulator() {
     setInfraProducts([]);
     setInfraSecurities([]);
     setInfraGuarantees([]);
-    setInfraConstructionRiskWeight(150);
+    setInfraConstructionRiskWeight(100);
     setInfraOperatingRiskWeight(100);
     setInfraRepaymentStartYear(7);
     setActiveTab("products");
