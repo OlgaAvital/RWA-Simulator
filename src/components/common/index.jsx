@@ -297,16 +297,15 @@ export function ResultSection({ title, children }) {
 }
 
 export function Kpi({ title, value, positive = false, muted = false, help = "" }) {
-  const background = positive ? "bg-emerald-50" : muted ? "bg-slate-100" : "bg-orange-50";
   const valueColor = positive ? "text-emerald-700" : "text-slate-900";
 
   return (
-    <div className={`flex items-center justify-between rounded-2xl p-4 ${background}`}>
-      <span className="text-sm text-slate-600">
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 py-2 last:border-b-0">
+      <span className="text-xs text-slate-600">
         {title}
         {help && <span className="mr-1 cursor-help text-xs text-slate-400" title={help}>ⓘ</span>}
       </span>
-      <span className={`text-xl font-bold ${valueColor}`}>{value}</span>
+      <span className={`text-sm font-semibold ${muted ? "text-slate-500" : valueColor}`}>{value}</span>
     </div>
   );
 }

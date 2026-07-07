@@ -7,6 +7,8 @@ import {
   Line,
   LineChart,
   Legend,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -1958,7 +1960,8 @@ export function InfrastructureProjectPanel({
   const projectChartRows = useMemo(() => [
     {
       year: 0,
-      label: "שנה 0",
+      chartYear: 0,
+      label: "0",
       outstanding: 0,
       undrawn: 0,
       totalExposure: 0,
@@ -1971,8 +1974,27 @@ export function InfrastructureProjectPanel({
       discountedIncome: 0,
       returnOnRwa: 0,
     },
-    ...(forecast.rows || []),
+    ...(forecast.rows || []).map((row) => ({
+      ...row,
+      chartYear: row.year,
+      label: `${Math.max(0, row.year - 1)}-${row.year}`,
+    })),
   ], [forecast.bankShareAmount, forecast.rows]);
+  const StageMarkers = ({ yAxisId } = {}) => {
+    const constructionEnd = Number(constructionYears) || 0;
+    const operationStart = constructionEnd + (Number(rampUpYears) || 0);
+    const hasRampUp = (Number(rampUpYears) || 0) > 0;
+    const axisProps = yAxisId ? { yAxisId } : {};
+    return (
+      <>
+        {constructionEnd > 0 && <ReferenceArea {...axisProps} x1={0} x2={constructionEnd} fill="#fed7aa" fillOpacity={0.18} label={{ value: "הקמה", position: "insideTop", fill: "#9a3412", fontSize: 12 }} />}
+        {hasRampUp && <ReferenceArea {...axisProps} x1={constructionEnd} x2={operationStart} fill="#bae6fd" fillOpacity={0.16} label={{ value: "הרצה", position: "insideTop", fill: "#0369a1", fontSize: 12 }} />}
+        {operationStart < (Number(projectYears) || 0) && <ReferenceArea {...axisProps} x1={operationStart} x2={Number(projectYears) || 0} fill="#bbf7d0" fillOpacity={0.12} label={{ value: "תפעול", position: "insideTop", fill: "#15803d", fontSize: 12 }} />}
+        {constructionEnd > 0 && <ReferenceLine x={constructionEnd} stroke="#f97316" strokeDasharray="4 4" strokeOpacity={0.7} />}
+        {hasRampUp && <ReferenceLine x={operationStart} stroke="#0ea5e9" strokeDasharray="4 4" strokeOpacity={0.7} />}
+      </>
+    );
+  };
   const handleProjectCurrencyChange = (nextCurrency) => {
     setProjectCurrency(nextCurrency);
     setProducts?.((rows) =>
@@ -2220,10 +2242,11 @@ export function InfrastructureProjectPanel({
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={projectChartRows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="chartYear" type="number" domain={[0, projectYears]} tick={{ fontSize: 11 }} tickFormatter={(value) => `${value}`} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
+                  <StageMarkers />
                   <Line type="monotone" dataKey="outstanding" stroke="#f97316" strokeWidth={3} dot={false} name="אשראי מנוצל בפועל" />
                   <Line type="monotone" dataKey="undrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
                   <Line type="monotone" dataKey="totalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת" />
@@ -2242,10 +2265,11 @@ export function InfrastructureProjectPanel({
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={projectChartRows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="chartYear" type="number" domain={[0, projectYears]} tick={{ fontSize: 11 }} tickFormatter={(value) => `${value}`} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <Tooltip formatter={(value) => formatK(Number(value))} />
                   <Legend />
+                  <StageMarkers />
                   <Line type="monotone" dataKey="projectOutstanding" stroke="#0ea5e9" strokeWidth={3} dot={false} name="אשראי מנוצל כל הפרויקט" />
                   <Line type="monotone" dataKey="projectUndrawn" stroke="#f59e0b" strokeWidth={3} dot={false} name="מסגרות לא מנוצלות" />
                   <Line type="monotone" dataKey="projectTotalExposure" stroke="#64748b" strokeWidth={3} dot={false} name="חשיפה כוללת כל הפרויקט" />
@@ -2263,11 +2287,12 @@ export function InfrastructureProjectPanel({
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={projectChartRows} margin={{ top: 20, right: 10, left: 10, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <XAxis dataKey="chartYear" type="number" domain={[0, projectYears]} tick={{ fontSize: 11 }} tickFormatter={(value) => `${value}`} />
                   <YAxis yAxisId="income" tick={{ fontSize: 12 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
                   <YAxis yAxisId="return" orientation="right" tick={{ fontSize: 12 }} tickFormatter={(value) => `${Number(value).toFixed(1)}%`} />
                   <Tooltip formatter={(value, name) => (name === "תשואה שנתית" ? `${Number(value).toFixed(2)}%` : formatK(Number(value)))} />
                   <Legend />
+                  <StageMarkers yAxisId="income" />
                   <Line yAxisId="income" type="monotone" dataKey="totalIncome" stroke="#f97316" strokeWidth={3} dot={false} name="הכנסות צפויות" />
                   <Line yAxisId="income" type="monotone" dataKey="discountedIncome" stroke="#64748b" strokeWidth={3} dot={false} name="הכנסות מהוונות" />
                   <Line yAxisId="return" type="monotone" dataKey="returnOnRwa" stroke="#22c55e" strokeWidth={3} dot={false} name="תשואה שנתית" />
@@ -2849,14 +2874,14 @@ export function ConstructionProjectPanel({
 
           <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
             <h3 className="mb-4 font-semibold text-emerald-900">תוצאות ניהוליות</h3>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-1">
-              <ReadOnlyBox title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
-              <ReadOnlyBox title="LTV פרויקט" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
-              <ReadOnlyBox title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
-              <ReadOnlyBox title="תשואה ל־RWA שנה ראשונה" value={`${forecast.firstYearReturnOnRwa.toFixed(2)}%`} tone="green" />
-              <ReadOnlyBox title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} tone="green" />
-              <ReadOnlyBox title="הכנסות שנה ראשונה" value={formatK(forecast.firstYearIncome)} positive />
-              <ReadOnlyBox title="הכנסות ממוצע לשנה" value={formatK(forecast.averageAnnualIncome)} positive />
+            <div className="space-y-1 rounded-2xl bg-white/70 px-3 py-2">
+              <Kpi title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
+              <Kpi title="LTV פרויקט" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
+              <Kpi title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
+              <Kpi title="תשואה ל־RWA שנה ראשונה" value={`${forecast.firstYearReturnOnRwa.toFixed(2)}%`} positive />
+              <Kpi title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} positive />
+              <Kpi title="הכנסות שנה ראשונה" value={formatK(forecast.firstYearIncome)} positive />
+              <Kpi title="הכנסות ממוצע לשנה" value={formatK(forecast.averageAnnualIncome)} positive />
             </div>
             <div className="mt-3 overflow-hidden rounded-2xl border border-emerald-200 bg-white text-xs">
               <table className="w-full">
