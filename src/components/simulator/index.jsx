@@ -15,7 +15,6 @@ import {
 
 import {
   DEFAULT_INFRA_GUARANTEE_FRAME_PCTS,
-  DEFAULT_INFRA_PULSE_PCT,
   ENTITY_STATUS,
   INFRA_CURRENCIES,
   INFRA_FEE_TIMING_OPTIONS,
@@ -327,9 +326,10 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
                 </PrintCard>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="mt-4 grid grid-cols-3 gap-4">
                 <PrintLineChart title="אשראי ו-RWA — חלק הבנק" data={printChartRows} lines={[{ key: "totalExposure", name: "חשיפה כוללת", color: "#f97316" }, { key: "rwa", name: "RWA", color: "#22c55e" }, { key: "bankShareLimit", name: "חלק הבנק", color: "#dc2626" }]} />
-                <PrintLineChart title="הכנסות ותשואה" data={printChartRows} lines={[{ key: "totalIncome", name: "הכנסות", color: "#f97316" }, { key: "discountedIncome", name: "מהוון", color: "#64748b" }, { key: "returnOnRwa", name: "תשואה", color: "#22c55e" }]} />
+                <PrintLineChart title="הכנסות" data={printChartRows} lines={[{ key: "totalIncome", name: "הכנסות", color: "#f97316" }, { key: "discountedIncome", name: "מהוון", color: "#64748b" }]} />
+                <PrintLineChart title="תשואה" data={printChartRows} lines={[{ key: "returnOnRwa", name: "תשואה", color: "#22c55e" }]} yFormatter={(value) => `${Number(value).toFixed(1)}%`} tooltipFormatter={(value) => `${Number(value).toFixed(2)}%`} />
               </div>
             </div>
 
@@ -374,7 +374,7 @@ export function InfrastructurePrintPreviewModal({ clientName, dealName, forecast
   );
 }
 
-export function PrintLineChart({ title, data, lines }) {
+export function PrintLineChart({ title, data, lines, yFormatter = (value) => `₪${Number(value / 1000).toFixed(0)}m`, tooltipFormatter = (value) => formatK(Number(value)) }) {
   return (
     <div className="h-64 rounded-2xl border border-slate-200 p-3">
       <h3 className="mb-2 text-sm font-bold text-slate-800">{title}</h3>
@@ -382,8 +382,8 @@ export function PrintLineChart({ title, data, lines }) {
         <LineChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fontSize: 10 }} tickFormatter={(value) => `₪${Number(value / 1000).toFixed(0)}m`} />
-          <Tooltip formatter={(value) => formatK(Number(value))} />
+          <YAxis tick={{ fontSize: 10 }} tickFormatter={yFormatter} />
+          <Tooltip formatter={(value) => tooltipFormatter(value)} />
           <Legend />
           {lines.map((line) => <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={3} dot={false} name={line.name} />)}
         </LineChart>
@@ -1027,6 +1027,12 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
   const isOtherLenderModal = lenderType === "other";
   const lenderTitle = isOtherLenderModal ? "אשראי מממנים אחרים" : "אשראי במימון הבנק";
   const visibleProducts = (products || []).filter((product) => (product.stage || "construction") === stage && (product.lenderType || "bank") === lenderType);
+  const getPulseCount = (product) => Math.max(1, Math.min(INFRA_PULSE_FIELDS.length, Math.floor(Number(product.termYears) || 1)));
+  const createEqualPulseFields = (termYears) => {
+    const pulseCount = Math.max(1, Math.min(INFRA_PULSE_FIELDS.length, Math.floor(Number(termYears) || 1)));
+    const defaultPulsePct = 100 / pulseCount;
+    return Object.fromEntries(INFRA_PULSE_FIELDS.map(({ field }, index) => [field, index < pulseCount ? Number(defaultPulsePct.toFixed(4)) : 0]));
+  };
   const updateProduct = (id, field, value) => {
     setProducts((rows) => rows.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
   };
@@ -1058,14 +1064,7 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
         graceYears: 1,
         customRepaymentPct: 8,
         pulseFrequency: "annual",
-        pulse1Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse2Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse3Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse4Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse5Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse6Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse7Pct: DEFAULT_INFRA_PULSE_PCT,
-        pulse8Pct: DEFAULT_INFRA_PULSE_PCT,
+        ...createEqualPulseFields(6),
         guaranteeFrameYear1Pct: 100,
         guaranteeFrameYear2Pct: 90,
         guaranteeFrameYear3Pct: 75,
@@ -1197,12 +1196,7 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                                       termYears: nextRule.isLoan ? row.termYears || 6 : row.termYears,
                                       graceYears: nextRule.isLoan ? row.graceYears ?? 1 : row.graceYears,
                                       pulseFrequency: nextRule.isPhasedLoan ? row.pulseFrequency || "annual" : row.pulseFrequency,
-                                      ...Object.fromEntries(
-                                        INFRA_PULSE_FIELDS.map(({ field }) => [
-                                          field,
-                                          nextRule.isPhasedLoan ? row[field] ?? DEFAULT_INFRA_PULSE_PCT : row[field],
-                                        ])
-                                      ),
+                                      ...(nextRule.isPhasedLoan ? createEqualPulseFields(row.termYears || 6) : Object.fromEntries(INFRA_PULSE_FIELDS.map(({ field }) => [field, row[field]]))),
                                       ...Object.fromEntries(
                                         INFRA_GUARANTEE_FRAME_FIELDS.map(({ field }, index) => [
                                           field,
@@ -1439,17 +1433,22 @@ export function InfraProductsModal({ products, setProducts, projectCurrency, sta
                             />
                             <ReadOnlyBox
                               title="מספר פעימות"
-                              value={`${Math.max(1, Math.floor(Number(product.termYears) || 1))}`}
+                              value={`${getPulseCount(product)}`}
                               tone="orange"
                             />
-                            <ReadOnlyBox
-                              title="שיעור בכל פעימה"
-                              value={`${(100 / Math.max(1, Math.floor(Number(product.termYears) || 1))).toFixed(2)}%`}
-                              tone="orange"
-                            />
+                            {INFRA_PULSE_FIELDS.slice(0, getPulseCount(product)).map(({ field }, index) => (
+                              <FieldBox key={field} title={`פעימה ${index + 1}, %`}>
+                                <NumberCell
+                                  wide
+                                  value={product[field] ?? Number((100 / getPulseCount(product)).toFixed(4))}
+                                  onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))}
+                                />
+                              </FieldBox>
+                            ))}
+                            <ReadOnlyBox title="סה״כ פעימות" value={`${INFRA_PULSE_FIELDS.slice(0, getPulseCount(product)).reduce((sum, { field }) => sum + (Number(product[field] ?? 100 / getPulseCount(product)) || 0), 0).toFixed(2)}%`} tone="orange" />
                           </div>
                           <div className="mt-2 text-xs text-orange-900">
-                            הלוואת הקמה מחושבת בפעימות שנתיות בלבד. מספר הפעימות נקבע לפי תקופת ההלוואה בעיגול כלפי מטה.
+                            הלוואת הקמה מחושבת בפעימות שנתיות בלבד. מספר הפעימות נקבע לפי תקופת ההלוואה בעיגול כלפי מטה; ברירת המחדל מחלקת את השחרור באופן שווה, וניתן לערוך כל פעימה.
                           </div>
                         </td>
                       </tr>
@@ -1673,7 +1672,7 @@ export function InfraGuaranteesModal({ guarantees, setGuarantees, analysis, onCl
                     <select value={row.guarantorRating} onChange={(event) => updateGuarantee(row.id, "guarantorRating", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
                       {Object.entries(INFRA_GUARANTOR_RATING_RULES).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}
                     </select>
-                    <div className="mt-1 text-[11px] text-slate-400">RW ערב: {row.guarantorRiskWeight}%</div>
+                    <div className="mt-1 text-[11px] text-slate-400">RW ערב: {row.guarantorRiskWeight}% · כשיר לאחר RW: {Math.max(0, 100 - row.guarantorRiskWeight)}%</div>
                   </td>
                   <td className="p-2"><Checkbox checked={row.legalValid} onChange={(v) => updateGuarantee(row.id, "legalValid", v)} /></td>
                   <td className="p-2"><Checkbox checked={row.unconditional} onChange={(v) => updateGuarantee(row.id, "unconditional", v)} /></td>

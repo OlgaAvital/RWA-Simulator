@@ -809,7 +809,11 @@ export function getInfraProductDrawdownPct(product, year, constructionYears = 0,
 
   if (rule.isPhasedLoan) {
     const pulseCount = Math.max(1, Math.floor(Number(product.termYears) || 1));
-    if (relativeYear >= 1 && relativeYear <= pulseCount) return 1 / pulseCount;
+    if (relativeYear >= 1 && relativeYear <= pulseCount) {
+      const field = `pulse${relativeYear}Pct`;
+      const configuredPulsePct = Number(product[field]);
+      return Number.isFinite(configuredPulsePct) ? Math.max(0, configuredPulsePct) / 100 : 1 / pulseCount;
+    }
     return 0;
   }
 
@@ -883,7 +887,7 @@ export function calculateInfrastructureGuarantees(guarantees) {
     const unconditional = Boolean(guarantee.unconditional);
     const maturityMatch = Boolean(guarantee.maturityMatch);
     const eligible = amount > 0 && ratingRule.eligible && legalValid && unconditional && maturityMatch;
-    const eligibleAmount = eligible ? amount : 0;
+    const eligibleAmount = eligible ? amount * Math.max(0, 1 - ratingRule.riskWeight / 100) : 0;
     const issues = [];
     if (!ratingRule.eligible) issues.push("דירוג ערב אינו כשיר בדוגמה");
     if (!legalValid) issues.push("חסר אישור משפטי/נוסח ערבות תקף");
