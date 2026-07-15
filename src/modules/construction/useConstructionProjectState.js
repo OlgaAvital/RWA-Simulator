@@ -11,6 +11,7 @@ export function useConstructionProjectState() {
   const [constructionFinalMonths, setConstructionFinalMonths] = useState(6);
   const [constructionSalesScenario, setConstructionSalesScenario] = useState("linear");
   const [constructionDelayMonths, setConstructionDelayMonths] = useState(0);
+  const [constructionIncompleteSalesAtBuildEndPct, setConstructionIncompleteSalesAtBuildEndPct] = useState(80);
   const [constructionTotalCost, setConstructionTotalCost] = useState(420000);
   const [constructionLandCost, setConstructionLandCost] = useState(140000);
   const [constructionExpectedRevenue, setConstructionExpectedRevenue] = useState(560000);
@@ -72,6 +73,18 @@ export function useConstructionProjectState() {
     },
     {
       id: 3,
+      name: "מסגרת ערבויות חוק מכר",
+      productType: "saleLawGuarantee",
+      amount: 560000,
+      limit: 560000,
+      margin: 0.65,
+      customerInterest: 0,
+      ccfUndrawn: 30,
+      riskWeight: 30,
+      paymentTerms: "30-70",
+    },
+    {
+      id: 4,
       name: "הלוואת מזנין",
       productType: "mezzanineLoan",
       amount: 0,
@@ -97,6 +110,8 @@ export function useConstructionProjectState() {
     setConstructionSalesScenario,
     constructionDelayMonths,
     setConstructionDelayMonths,
+    constructionIncompleteSalesAtBuildEndPct,
+    setConstructionIncompleteSalesAtBuildEndPct,
     constructionTotalCost,
     setConstructionTotalCost,
     constructionLandCost,

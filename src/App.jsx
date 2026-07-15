@@ -222,6 +222,8 @@ export default function RwaReturnSimulator() {
     setConstructionSalesScenario,
     constructionDelayMonths,
     setConstructionDelayMonths,
+    constructionIncompleteSalesAtBuildEndPct,
+    setConstructionIncompleteSalesAtBuildEndPct,
     constructionTotalCost,
     setConstructionTotalCost,
     constructionLandCost,
@@ -395,6 +397,10 @@ export default function RwaReturnSimulator() {
     infraRepaymentStartYear,
     constructionLandMonths,
     constructionBuildMonths,
+    constructionFinalMonths,
+    constructionSalesScenario,
+    constructionDelayMonths,
+    constructionIncompleteSalesAtBuildEndPct,
     constructionTotalCost,
     constructionLandCost,
     constructionExpectedRevenue,
@@ -405,6 +411,10 @@ export default function RwaReturnSimulator() {
     constructionSaleLawGuaranteeFeeRate,
     constructionAccountManagementFee,
     constructionSetupFeePct,
+    constructionProjectManagementFee,
+    constructionLandDocumentFee,
+    constructionEscortDocumentFee,
+    constructionWorkingCapitalIssuanceFee,
     constructionLegalAndControlFees,
     constructionCompletionGuaranteeLimit,
     constructionLandRiskWeight,
@@ -470,6 +480,10 @@ export default function RwaReturnSimulator() {
     setInfraRepaymentStartYear(snapshot.infraRepaymentStartYear || 7);
     setConstructionLandMonths(snapshot.constructionLandMonths ?? 24);
     setConstructionBuildMonths(snapshot.constructionBuildMonths ?? 36);
+    setConstructionFinalMonths(snapshot.constructionFinalMonths ?? 6);
+    setConstructionSalesScenario(snapshot.constructionSalesScenario ?? "linear");
+    setConstructionDelayMonths(snapshot.constructionDelayMonths ?? 0);
+    setConstructionIncompleteSalesAtBuildEndPct(snapshot.constructionIncompleteSalesAtBuildEndPct ?? 80);
     setConstructionTotalCost(snapshot.constructionTotalCost ?? 420000);
     setConstructionLandCost(snapshot.constructionLandCost ?? 140000);
     setConstructionExpectedRevenue(snapshot.constructionExpectedRevenue ?? 560000);
@@ -480,6 +494,10 @@ export default function RwaReturnSimulator() {
     setConstructionSaleLawGuaranteeFeeRate(snapshot.constructionSaleLawGuaranteeFeeRate ?? 0.65);
     setConstructionAccountManagementFee(snapshot.constructionAccountManagementFee ?? 180);
     setConstructionSetupFeePct(snapshot.constructionSetupFeePct ?? 0.45);
+    setConstructionProjectManagementFee(snapshot.constructionProjectManagementFee ?? 0);
+    setConstructionLandDocumentFee(snapshot.constructionLandDocumentFee ?? 0);
+    setConstructionEscortDocumentFee(snapshot.constructionEscortDocumentFee ?? 0);
+    setConstructionWorkingCapitalIssuanceFee(snapshot.constructionWorkingCapitalIssuanceFee ?? 0);
     setConstructionLegalAndControlFees(snapshot.constructionLegalAndControlFees ?? 240);
     setConstructionCompletionGuaranteeLimit(snapshot.constructionCompletionGuaranteeLimit ?? 25000);
     setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 100);
@@ -526,7 +544,6 @@ export default function RwaReturnSimulator() {
     setEntityStatus("regular");
     setSpRating("unrated");
     setRealEstateExposureType("none");
-    setViewMode("singleDeal");
     setExistingEad(0);
     setExistingRwa(0);
     setExistingAnnualIncome(0);
@@ -561,6 +578,45 @@ export default function RwaReturnSimulator() {
     setInfraConstructionRiskWeight(100);
     setInfraOperatingRiskWeight(100);
     setInfraRepaymentStartYear(7);
+    setConstructionLandMonths(24);
+    setConstructionBuildMonths(36);
+    setConstructionFinalMonths(6);
+    setConstructionSalesScenario("linear");
+    setConstructionDelayMonths(0);
+    setConstructionIncompleteSalesAtBuildEndPct(80);
+    setConstructionTotalCost(420000);
+    setConstructionLandCost(140000);
+    setConstructionExpectedRevenue(560000);
+    setConstructionEquityPct(25);
+    setConstructionBankSharePct(100);
+    setConstructionLoanMargin(3.2);
+    setConstructionGuaranteeFeeRate(1.1);
+    setConstructionSaleLawGuaranteeFeeRate(0.65);
+    setConstructionAccountManagementFee(180);
+    setConstructionSetupFeePct(0.45);
+    setConstructionProjectManagementFee(0);
+    setConstructionLandDocumentFee(0);
+    setConstructionEscortDocumentFee(0);
+    setConstructionWorkingCapitalIssuanceFee(0);
+    setConstructionLegalAndControlFees(240);
+    setConstructionCompletionGuaranteeLimit(25000);
+    setConstructionLandRiskWeight(100);
+    setConstructionBuildRiskWeight(100);
+    setConstructionSaleLawGuaranteeCcf(30);
+    setConstructionGuaranteeCcf(50);
+    setConstructionUndrawnLoanCcf(0);
+    setConstructionSaleLawGuaranteeFinalCcf(10);
+    setConstructionSaleLawGuaranteeReductionStartPct(80);
+    setConstructionCreditProducts(engine.createDefaultConstructionCreditProducts({ totalCost: 420000, landCost: 140000, expectedRevenue: 560000, equityPct: 25, bankSharePct: 100 }));
+    setConstructionCollaterals([
+      { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 140000, haircutPct: 35, eligible: true },
+      { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 50000, haircutPct: 100, eligible: false },
+    ]);
+    setConstructionInsurances([
+      { id: 1, name: "ביטוח ערבויות חוק מכר", insuranceType: "guaranteeInsurance", insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0.35, paymentAmount: 0 },
+    ]);
+    setIsConstructionCreditModalOpen(false);
+    setIsConstructionCollateralModalOpen(false);
     setActiveTab("products");
     setProducts([]);
     setSecurities([]);
@@ -787,47 +843,70 @@ export default function RwaReturnSimulator() {
     ]
   );
 
-  const constructionForecast = useMemo(
-    () =>
-      engine.calculateConstructionProjectForecast({
-        landMonths: constructionLandMonths,
-        constructionMonths: constructionBuildMonths,
-        finalMonths: constructionFinalMonths,
-        salesScenario: constructionSalesScenario,
-        constructionDelayMonths,
-        totalCost: constructionTotalCost,
-        landCost: constructionLandCost,
-        expectedRevenue: constructionExpectedRevenue,
-        equityPct: constructionEquityPct,
-        bankSharePct: constructionBankSharePct,
-        loanMargin: constructionLoanMargin,
-        guaranteeFeeRate: constructionGuaranteeFeeRate,
-        saleLawGuaranteeFeeRate: constructionSaleLawGuaranteeFeeRate,
-        accountManagementFee: constructionAccountManagementFee,
-        setupFeePct: constructionSetupFeePct,
-        projectManagementFee: constructionProjectManagementFee,
-        landDocumentFee: constructionLandDocumentFee,
-        escortDocumentFee: constructionEscortDocumentFee,
-        workingCapitalIssuanceFee: constructionWorkingCapitalIssuanceFee,
-        legalAndControlFees: constructionLegalAndControlFees,
-        completionGuaranteeLimit: constructionCompletionGuaranteeLimit,
-        landRiskWeight: constructionLandRiskWeight,
-        constructionRiskWeight: constructionBuildRiskWeight,
-        saleLawGuaranteeCcf: constructionSaleLawGuaranteeCcf,
-        guaranteeCcf: constructionGuaranteeCcf,
-        undrawnLoanCcf: constructionUndrawnLoanCcf,
-        saleLawGuaranteeFinalCcf: constructionSaleLawGuaranteeFinalCcf,
-        saleLawGuaranteeReductionStartPct: constructionSaleLawGuaranteeReductionStartPct,
-        creditProducts: constructionCreditProducts,
-        collaterals: constructionCollaterals,
-        insurances: constructionInsurances,
+  const constructionForecast = useMemo(() => {
+    const baseConstructionInput = {
+      landMonths: constructionLandMonths,
+      constructionMonths: constructionBuildMonths,
+      finalMonths: constructionFinalMonths,
+      salesScenario: constructionSalesScenario,
+      constructionDelayMonths,
+      incompleteSalesAtBuildEndPct: constructionIncompleteSalesAtBuildEndPct,
+      totalCost: constructionTotalCost,
+      landCost: constructionLandCost,
+      expectedRevenue: constructionExpectedRevenue,
+      equityPct: constructionEquityPct,
+      bankSharePct: constructionBankSharePct,
+      loanMargin: constructionLoanMargin,
+      guaranteeFeeRate: constructionGuaranteeFeeRate,
+      saleLawGuaranteeFeeRate: constructionSaleLawGuaranteeFeeRate,
+      accountManagementFee: constructionAccountManagementFee,
+      setupFeePct: constructionSetupFeePct,
+      projectManagementFee: constructionProjectManagementFee,
+      landDocumentFee: constructionLandDocumentFee,
+      escortDocumentFee: constructionEscortDocumentFee,
+      workingCapitalIssuanceFee: constructionWorkingCapitalIssuanceFee,
+      legalAndControlFees: constructionLegalAndControlFees,
+      completionGuaranteeLimit: constructionCompletionGuaranteeLimit,
+      landRiskWeight: constructionLandRiskWeight,
+      constructionRiskWeight: constructionBuildRiskWeight,
+      saleLawGuaranteeCcf: constructionSaleLawGuaranteeCcf,
+      guaranteeCcf: constructionGuaranteeCcf,
+      undrawnLoanCcf: constructionUndrawnLoanCcf,
+      saleLawGuaranteeFinalCcf: constructionSaleLawGuaranteeFinalCcf,
+      saleLawGuaranteeReductionStartPct: constructionSaleLawGuaranteeReductionStartPct,
+      creditProducts: constructionCreditProducts,
+      collaterals: constructionCollaterals,
+      insurances: constructionInsurances,
+    };
+    const forecast = engine.calculateConstructionProjectForecast(baseConstructionInput);
+    const scenarioDefinitions = [
+      { key: "linear", label: "מכירות לינאריות", overrides: { salesScenario: "linear", constructionDelayMonths: 0 } },
+      { key: "backLoaded", label: "מכירות שמתחילות לאט ומתגברות בסוף", overrides: { salesScenario: "backLoaded", constructionDelayMonths: 0 } },
+      { key: "frontLoaded", label: "מכירות שמתחילות מהר ומאטות בסוף", overrides: { salesScenario: "frontLoaded", constructionDelayMonths: 0 } },
+      { key: "incompleteAtBuildEnd", label: "מכירות לא מסתיימות עם סיום הבניה", overrides: { salesScenario: "incompleteAtBuildEnd", constructionDelayMonths: 0 } },
+      { key: "constructionDelay", label: "עיכוב בבניה", overrides: { salesScenario: constructionSalesScenario === "exitAfterLand" ? "linear" : constructionSalesScenario, constructionDelayMonths: Math.max(1, constructionDelayMonths || 6) } },
+    ];
+    return {
+      ...forecast,
+      scenarioComparisons: scenarioDefinitions.map((scenario) => {
+        const scenarioForecast = engine.calculateConstructionProjectForecast({ ...baseConstructionInput, ...scenario.overrides });
+        return {
+          key: scenario.key,
+          label: scenario.label,
+          averageRwa: scenarioForecast.averageRwa,
+          averageReturnOnRwa: scenarioForecast.averageReturnOnRwa,
+          averageAnnualIncome: scenarioForecast.averageAnnualIncome,
+        };
       }),
+    };
+  },
     [
       constructionLandMonths,
       constructionBuildMonths,
       constructionFinalMonths,
       constructionSalesScenario,
       constructionDelayMonths,
+      constructionIncompleteSalesAtBuildEndPct,
       constructionTotalCost,
       constructionLandCost,
       constructionExpectedRevenue,
@@ -1108,6 +1187,8 @@ export default function RwaReturnSimulator() {
             setSalesScenario={setConstructionSalesScenario}
             constructionDelayMonths={constructionDelayMonths}
             setConstructionDelayMonths={setConstructionDelayMonths}
+            incompleteSalesAtBuildEndPct={constructionIncompleteSalesAtBuildEndPct}
+            setIncompleteSalesAtBuildEndPct={setConstructionIncompleteSalesAtBuildEndPct}
             totalCost={constructionTotalCost}
             setTotalCost={setConstructionTotalCost}
             landCost={constructionLandCost}
@@ -1721,6 +1802,7 @@ export default function RwaReturnSimulator() {
           products={constructionCreditProducts}
           setProducts={setConstructionCreditProducts}
           totalCost={constructionTotalCost}
+          expectedRevenue={constructionExpectedRevenue}
           landCost={constructionLandCost}
           equityPct={constructionEquityPct}
           bankSharePct={constructionBankSharePct}

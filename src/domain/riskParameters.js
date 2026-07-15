@@ -127,7 +127,7 @@ export const CONSTRUCTION_INSURER_RATING_RULES = {
 
 export const CONSTRUCTION_RISK_WEIGHT_TABLE = {
   cashCreditDefault: 100,
-  landLoanHighLtvThresholdPct: 80,
+  landLoanHighLtvThresholdPct: 75,
   landLoanHighLtv: 150,
   otherGuaranteeUtilized: 50,
   otherGuaranteeUndrawn: 50,
@@ -140,20 +140,24 @@ export const CONSTRUCTION_RISK_WEIGHT_TABLE = {
 
 
 export const CONSTRUCTION_SALES_SCENARIOS = {
-  linear: { label: "מכירות לינאריות בפרויקט" },
-  backLoaded: { label: "מכירות אקספוננציאליות — מתחיל לאט ומתגבר בסוף" },
-  frontLoaded: { label: "מכירות מתחילות מהר ומאטות בהמשך" },
+  linear: { label: "מכירות לינאריות" },
+  backLoaded: { label: "מכירות שמתחילות לאט ומתגברות בסוף" },
+  frontLoaded: { label: "מכירות שמתחילות מהר ומאטות בסוף" },
+  incompleteAtBuildEnd: { label: "מכירות לא מסתיימות עם סיום הבניה" },
   exitAfterLand: { label: "הלקוח לא ממשיך ליווי בבנק ופורע בסוף תקופת הקרקע" },
 };
 
 
 
 export const CONSTRUCTION_CREDIT_PRODUCT_TYPES = {
-  landLoan: { label: "הלוואת קרקע", stage: "land", isLoan: true, isMezzanine: false, defaultRiskWeight: 100, defaultCcfUndrawn: 0 },
-  seniorConstruction: { label: "הלוואת בניה בכירה", stage: "construction", isLoan: true, isMezzanine: false, defaultRiskWeight: 100, defaultCcfUndrawn: 0 },
-  mezzanineLoan: { label: "הלוואת מזנין", stage: "construction", isLoan: true, isMezzanine: true, defaultRiskWeight: 100, defaultCcfUndrawn: 0, defaultBalloonAtEnd: true },
-  saleLawGuarantee: { label: "מסגרת ערבויות חוק מכר", stage: "construction", isGuarantee: true, isSaleLaw: true, defaultRiskWeight: 30, defaultCcfUndrawn: 30 },
-  performanceGuarantee: { label: "ערבות ביצוע/טיב", stage: "construction", isGuarantee: true, isSaleLaw: false, defaultRiskWeight: 50, defaultCcfUndrawn: 50 },
+  landLoan: { label: "הלוואת קרקע", stage: "land", isLoan: true, isMezzanine: false, defaultRiskWeight: 100, defaultCcfUndrawn: 0, defaultStandalone: true },
+  seniorConstruction: { label: "מסגרת הלוואות בניה", stage: "construction", isLoan: true, isMezzanine: false, defaultRiskWeight: 100, defaultCcfUndrawn: 50, hasHalfYearUtilization: true },
+  mezzanineLoan: { label: "הלוואת מזנין", stage: "construction", isLoan: true, isMezzanine: true, defaultRiskWeight: 100, defaultCcfUndrawn: 0, defaultBalloonAtEnd: true, defaultStandalone: true },
+  vatLoan: { label: "הלוואת מע״מ", stage: "construction", isLoan: true, isMezzanine: true, defaultRiskWeight: 100, defaultCcfUndrawn: 0, defaultBalloonAtEnd: true, defaultStandalone: true },
+  tenderGuarantee: { label: "ערבות מכרז", stage: "construction", isGuarantee: true, isSaleLaw: false, defaultRiskWeight: 20, defaultCcfUndrawn: 50, defaultCcfUtilized: 20 },
+  performanceGuarantee: { label: "ערבות ביצוע", stage: "construction", isGuarantee: true, isSaleLaw: false, defaultRiskWeight: 50, defaultCcfUndrawn: 50, defaultCcfUtilized: 50 },
+  financialGuarantee: { label: "ערבות כספית", stage: "construction", isGuarantee: true, isSaleLaw: false, defaultRiskWeight: 100, defaultCcfUndrawn: 50, defaultCcfUtilized: 50 },
+  saleLawGuarantee: { label: "מסגרת ערבויות חוק מכר", stage: "construction", isGuarantee: true, isSaleLaw: true, defaultRiskWeight: 30, defaultCcfUndrawn: 30, paymentTerms: "30-70" },
 };
 
 
