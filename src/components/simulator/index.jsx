@@ -2699,50 +2699,60 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, expe
                 <th className="p-3 text-right">ניצול שיא צפוי</th>
                 <th className="p-3 text-right">מרווח/עמלה</th>
                 <th className="p-3 text-right">ריבית ללקוח</th>
-                {CONSTRUCTION_UTILIZATION_FIELDS.slice(0, Math.max(1, Math.ceil(constructionMonths / 6))).map(({ field, label }) => <th key={field} className="p-3 text-right">{label}</th>)}
-                <th className="p-3 text-right">ניצול אחרון</th>
+                <th className="p-3 text-right">פרטים נוספים</th>
                 <th className="p-3 text-right">מחיקה</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((product) => {
                 const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
-                const isLand = rule.stage === "land";
                 const isGuarantee = rule.isGuarantee;
                 const visibleUtilizationFields = CONSTRUCTION_UTILIZATION_FIELDS.slice(0, Math.max(1, Math.ceil(constructionMonths / 6)));
                 const lastUtilizationPct = visibleUtilizationFields.reduce((last, { field }) => (product[field] ?? last), 0);
                 return (
-                  <tr key={product.id} className={`border-t align-top ${product.isNew ? "bg-amber-50" : "bg-white"}`}>
-                    <td className="p-3"><input value={product.name || ""} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
-                    <td className="p-3">
-                      <select value={product.productType || "seniorConstruction"} onChange={(event) => updateProduct(product.id, "productType", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
-                        {Object.entries(CONSTRUCTION_CREDIT_PRODUCT_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-3"><NumberCell value={rule.isSaleLaw ? expectedRevenue : product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw} />{rule.isSaleLaw && <div className="mt-1 text-[11px] text-slate-500">נשאב מתמורות צפויות ממכירות</div>}</td>
-                    <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw} /></td>
-                    <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
-                    <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}% · מרווח + מחיר צל = ריבית ללקוח</div>}</td>
-                    {visibleUtilizationFields.map(({ field }) => (
-                      <td key={field} className="p-3">
-                        <div className="space-y-1"><NumberCell disabled={isLand || isGuarantee} value={isLand || isGuarantee ? 0 : product[field] ?? 0} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
-                        {!isLand && !isGuarantee && <div className="text-[11px] text-slate-500">{formatK((Number(product.limit ?? product.amount) || 0) * (Number(product[field]) || 0) / 100)}</div>}
-                        </div>
+                  <React.Fragment key={product.id}>
+                    <tr className={`border-t align-top ${product.isNew ? "bg-amber-50" : "bg-white"}`}>
+                      <td className="p-3"><input value={product.name || ""} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
+                      <td className="p-3">
+                        <select value={product.productType || "seniorConstruction"} onChange={(event) => updateProduct(product.id, "productType", event.target.value)} className="w-44 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
+                          {Object.entries(CONSTRUCTION_CREDIT_PRODUCT_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
+                        </select>
                       </td>
-                    ))}
-                    <td className="p-3 font-bold text-slate-700">{isLand ? "100% בתקופת קרקע" : isGuarantee ? "ללא ניצול הלוואה" : `${Number(lastUtilizationPct || 0).toFixed(1)}%`}</td>
-                    <td className="p-3 space-y-2">
-                      {rule.isSaleLaw && <select value={product.paymentTerms || "30-70"} onChange={(event) => updateProduct(product.id, "paymentTerms", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="20-80">20-80</option><option value="30-70">30-70</option><option value="50-50">50-50</option></select>}
-                      {(product.productType === "mezzanineLoan" || product.productType === "vatLoan") && <select value={product.stagePeriod || "construction"} onChange={(event) => updateProduct(product.id, "stagePeriod", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="land">קרקע</option><option value="construction">בניה</option></select>}
-                      <button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button>
-                    </td>
-                  </tr>
+                      <td className="p-3"><NumberCell value={rule.isSaleLaw ? expectedRevenue : product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw} />{rule.isSaleLaw && <div className="mt-1 text-[11px] text-slate-500">נשאב מתמורות צפויות ממכירות</div>}</td>
+                      <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw || rule.hasHalfYearUtilization} />{rule.hasHalfYearUtilization && <div className="mt-1 text-[11px] text-slate-500">מחושב לפי צפי הניצול בשורה שמתחת</div>}</td>
+                      <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
+                      <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}%</div>}</td>
+                      <td className="p-3 space-y-2 text-xs text-slate-600">
+                        {rule.hasHalfYearUtilization && <div>צפי ניצול אחרון: <b>{Number(lastUtilizationPct || 0).toFixed(1)}%</b></div>}
+                        {rule.isSaleLaw && <label className="block space-y-1"><span>תנאי תשלום נורמטיביים</span><select value={product.paymentTerms || "30-70"} onChange={(event) => updateProduct(product.id, "paymentTerms", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="20-80">20-80</option><option value="30-70">30-70</option><option value="50-50">50-50</option></select></label>}
+                        {(product.productType === "mezzanineLoan" || product.productType === "vatLoan") && <label className="block space-y-1"><span>תקופת העמדה</span><select value={product.stagePeriod || "construction"} onChange={(event) => updateProduct(product.id, "stagePeriod", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="land">קרקע</option><option value="construction">בניה</option></select></label>}
+                        {!rule.hasHalfYearUtilization && !rule.isSaleLaw && product.productType !== "mezzanineLoan" && product.productType !== "vatLoan" && <span>אין שדות שחרורים למוצר זה</span>}
+                      </td>
+                      <td className="p-3"><button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    </tr>
+                    {rule.hasHalfYearUtilization && (
+                      <tr className={`${product.isNew ? "bg-amber-50" : "bg-slate-50"}`}>
+                        <td className="p-3 text-xs font-semibold text-orange-900" colSpan={2}>צפי ניצול מסגרת לפי חציון</td>
+                        <td className="p-3" colSpan={5}>
+                          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+                            {visibleUtilizationFields.map(({ field, label }) => (
+                              <label key={field} className="rounded-2xl border border-orange-100 bg-white p-2 text-xs">
+                                <span className="mb-1 block font-medium text-slate-600">{label}</span>
+                                <NumberCell value={product[field] ?? 50} onChange={(v) => updateProduct(product.id, field, clampNumber(v, 0, 100))} />
+                                <span className="mt-1 block text-slate-500">{formatK((Number(product.limit ?? product.amount) || 0) * (Number(product[field]) || 0) / 100)}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            הערה: בהלוואות בניה/מזנין מזינים צפי ניצול בכל חציון מתוך מסגרת ההלוואה. לדוגמה: מסגרת 1,000 וניצול 80% יוצרים אשראי מנוצל 800 ב־CCF 100%; היתרה הלא מנוצלת מחושבת רק מתוך מסגרת הפרויקט שנותרה אחרי ניצול הלוואות וערבויות חוק מכר, וב־CCF 50%.
+            הערה: שדות שחרורים מוצגים רק עבור מסגרת הלוואות בניה. לדוגמה: מסגרת 1,000 וניצול 80% יוצרים אשראי מנוצל 800 ב־CCF 100%; היתרה הלא מנוצלת מחושבת מתוך המסגרת שנותרה וב־CCF 50%.
           </div>
         </div>
 
@@ -2880,9 +2890,9 @@ export function ConstructionProjectPanel({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
-            <h3 className="mb-4 font-semibold text-emerald-900">תוצאות ניהוליות</h3>
-            <div className="space-y-1 rounded-2xl bg-white/70 px-3 py-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-4 font-semibold text-slate-800">תוצאות ניהוליות</h3>
+            <div className="space-y-1 rounded-2xl bg-slate-50 px-3 py-2">
               <Kpi title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
               <Kpi title="LTV פרויקט ללא מזנין" value={`${forecast.ltvBeforeMezzanine.toFixed(1)}%`} />
               <Kpi title="LTV פרויקט כולל מזנין" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
@@ -2892,12 +2902,13 @@ export function ConstructionProjectPanel({
               <Kpi title="הכנסות שנה ראשונה" value={formatK(forecast.firstYearIncome)} positive />
               <Kpi title="הכנסות ממוצע לשנה" value={formatK(forecast.averageAnnualIncome)} positive />
             </div>
-            <div className="mt-3 overflow-hidden rounded-2xl border border-emerald-200 bg-white text-xs">
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white text-xs">
               <table className="w-full">
-                <thead className="bg-emerald-100 text-emerald-900"><tr><th className="p-2 text-right">תרחיש</th><th className="p-2 text-right">RWA</th><th className="p-2 text-right">תשואה</th><th className="p-2 text-right">הכנסה שנתית</th></tr></thead>
+                <thead className="bg-slate-100 text-slate-700"><tr><th className="p-2 text-right">תרחיש</th><th className="p-2 text-right">RWA</th><th className="p-2 text-right">תשואה</th><th className="p-2 text-right">הכנסה שנתית</th></tr></thead>
                 <tbody>
-                  <tr><td className="p-2">שנה 1</td><td className="p-2">{formatK(forecast.rows.slice(0, 12).reduce((sum, row) => sum + row.rwa, 0) / Math.max(1, Math.min(12, forecast.rows.length)))}</td><td className="p-2">{forecast.firstYearReturnOnRwa.toFixed(2)}%</td><td className="p-2">{formatK(forecast.firstYearIncome)}</td></tr>
-                  <tr><td className="p-2">ממוצע פרויקט</td><td className="p-2">{formatK(forecast.averageRwa)}</td><td className="p-2">{forecast.averageReturnOnRwa.toFixed(2)}%</td><td className="p-2">{formatK(forecast.averageAnnualIncome)}</td></tr>
+                  {(forecast.scenarioComparisons || []).map((scenario) => (
+                    <tr key={scenario.key}><td className="p-2">{scenario.label}</td><td className="p-2">{formatK(scenario.averageRwa)}</td><td className="p-2">{scenario.averageReturnOnRwa.toFixed(2)}%</td><td className="p-2">{formatK(scenario.averageAnnualIncome)}</td></tr>
+                  ))}
                 </tbody>
               </table>
             </div>
