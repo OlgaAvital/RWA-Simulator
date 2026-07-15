@@ -484,22 +484,22 @@ export default function RwaReturnSimulator() {
     setConstructionSalesScenario(snapshot.constructionSalesScenario ?? "linear");
     setConstructionDelayMonths(snapshot.constructionDelayMonths ?? 0);
     setConstructionIncompleteSalesAtBuildEndPct(snapshot.constructionIncompleteSalesAtBuildEndPct ?? 80);
-    setConstructionTotalCost(snapshot.constructionTotalCost ?? 420000);
-    setConstructionLandCost(snapshot.constructionLandCost ?? 140000);
-    setConstructionExpectedRevenue(snapshot.constructionExpectedRevenue ?? 560000);
+    setConstructionTotalCost(snapshot.constructionTotalCost ?? 0);
+    setConstructionLandCost(snapshot.constructionLandCost ?? 0);
+    setConstructionExpectedRevenue(snapshot.constructionExpectedRevenue ?? 0);
     setConstructionEquityPct(snapshot.constructionEquityPct ?? 25);
     setConstructionBankSharePct(snapshot.constructionBankSharePct ?? 100);
     setConstructionLoanMargin(snapshot.constructionLoanMargin ?? 3.2);
     setConstructionGuaranteeFeeRate(snapshot.constructionGuaranteeFeeRate ?? 1.1);
     setConstructionSaleLawGuaranteeFeeRate(snapshot.constructionSaleLawGuaranteeFeeRate ?? 0.65);
-    setConstructionAccountManagementFee(snapshot.constructionAccountManagementFee ?? 180);
+    setConstructionAccountManagementFee(snapshot.constructionAccountManagementFee ?? 0);
     setConstructionSetupFeePct(snapshot.constructionSetupFeePct ?? 0.45);
     setConstructionProjectManagementFee(snapshot.constructionProjectManagementFee ?? 0);
     setConstructionLandDocumentFee(snapshot.constructionLandDocumentFee ?? 0);
     setConstructionEscortDocumentFee(snapshot.constructionEscortDocumentFee ?? 0);
     setConstructionWorkingCapitalIssuanceFee(snapshot.constructionWorkingCapitalIssuanceFee ?? 0);
-    setConstructionLegalAndControlFees(snapshot.constructionLegalAndControlFees ?? 240);
-    setConstructionCompletionGuaranteeLimit(snapshot.constructionCompletionGuaranteeLimit ?? 25000);
+    setConstructionLegalAndControlFees(snapshot.constructionLegalAndControlFees ?? 0);
+    setConstructionCompletionGuaranteeLimit(snapshot.constructionCompletionGuaranteeLimit ?? 0);
     setConstructionLandRiskWeight(snapshot.constructionLandRiskWeight ?? 100);
     setConstructionBuildRiskWeight(snapshot.constructionBuildRiskWeight ?? 100);
     setConstructionSaleLawGuaranteeCcf(snapshot.constructionSaleLawGuaranteeCcf ?? 30);
@@ -584,22 +584,22 @@ export default function RwaReturnSimulator() {
     setConstructionSalesScenario("linear");
     setConstructionDelayMonths(0);
     setConstructionIncompleteSalesAtBuildEndPct(80);
-    setConstructionTotalCost(420000);
-    setConstructionLandCost(140000);
-    setConstructionExpectedRevenue(560000);
+    setConstructionTotalCost(0);
+    setConstructionLandCost(0);
+    setConstructionExpectedRevenue(0);
     setConstructionEquityPct(25);
     setConstructionBankSharePct(100);
     setConstructionLoanMargin(3.2);
     setConstructionGuaranteeFeeRate(1.1);
     setConstructionSaleLawGuaranteeFeeRate(0.65);
-    setConstructionAccountManagementFee(180);
+    setConstructionAccountManagementFee(0);
     setConstructionSetupFeePct(0.45);
     setConstructionProjectManagementFee(0);
     setConstructionLandDocumentFee(0);
     setConstructionEscortDocumentFee(0);
     setConstructionWorkingCapitalIssuanceFee(0);
-    setConstructionLegalAndControlFees(240);
-    setConstructionCompletionGuaranteeLimit(25000);
+    setConstructionLegalAndControlFees(0);
+    setConstructionCompletionGuaranteeLimit(0);
     setConstructionLandRiskWeight(100);
     setConstructionBuildRiskWeight(100);
     setConstructionSaleLawGuaranteeCcf(30);
@@ -607,10 +607,10 @@ export default function RwaReturnSimulator() {
     setConstructionUndrawnLoanCcf(0);
     setConstructionSaleLawGuaranteeFinalCcf(10);
     setConstructionSaleLawGuaranteeReductionStartPct(80);
-    setConstructionCreditProducts(engine.createDefaultConstructionCreditProducts({ totalCost: 420000, landCost: 140000, expectedRevenue: 560000, equityPct: 25, bankSharePct: 100 }));
+    setConstructionCreditProducts([]);
     setConstructionCollaterals([
-      { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 140000, haircutPct: 35, eligible: true },
-      { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 50000, haircutPct: 100, eligible: false },
+      { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 0, haircutPct: 35, eligible: true },
+      { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 0, haircutPct: 100, eligible: false },
     ]);
     setConstructionInsurances([
       { id: 1, name: "ביטוח ערבויות חוק מכר", insuranceType: "guaranteeInsurance", insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0.35, paymentAmount: 0 },

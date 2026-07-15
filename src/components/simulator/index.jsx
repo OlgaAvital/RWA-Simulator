@@ -2671,7 +2671,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, expe
   };
   const resetDefault = () => {
     onBeforeChange?.();
-    setProducts(createDefaultConstructionCreditProducts?.({ totalCost, landCost, expectedRevenue, equityPct, bankSharePct }) || []);
+    setProducts([]);
   };
   const rows = products || [];
 

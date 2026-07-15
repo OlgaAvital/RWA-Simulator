@@ -1838,8 +1838,9 @@ export function calculateConstructionProjectForecast(input = {}) {
   const undrawnLoanCcf = Math.max(0, Number(input.undrawnLoanCcf) || 0) / 100;
   const completionGuaranteeLimit = Math.max(0, Number(input.completionGuaranteeLimit) || 0);
   const equityAmount = totalCost * (equityPct / 100);
+  const hasExplicitCreditProducts = Array.isArray(input.creditProducts);
   const fallbackProducts = createDefaultConstructionCreditProducts({ totalCost, landCost, expectedRevenue, equityPct, bankSharePct });
-  const creditProducts = (input.creditProducts && input.creditProducts.length > 0 ? input.creditProducts : fallbackProducts).map((product, index) => {
+  const creditProducts = (hasExplicitCreditProducts ? input.creditProducts : fallbackProducts).map((product, index) => {
     const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
     return {
       ...product,
@@ -1863,7 +1864,8 @@ export function calculateConstructionProjectForecast(input = {}) {
   const vatLoanFacility = creditProducts.filter((product) => product.productType === "vatLoan").reduce((sum, product) => sum + product.amount, 0);
   const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility - mezzanineFacility);
   const seniorLoanFacility = Math.max(0, totalLoanFacility - mezzanineFacility);
-  const saleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0) || expectedRevenue * (bankSharePct / 100);
+  const explicitSaleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0);
+  const saleLawGuaranteeFacility = explicitSaleLawGuaranteeFacility || (hasExplicitCreditProducts ? 0 : expectedRevenue * (bankSharePct / 100));
   const setupFee = landDocumentFee + escortDocumentFee + workingCapitalIssuanceFee;
   const monthlyAccountFee = 0;
   const monthlyControlFee = legalAndControlFees / 12;
