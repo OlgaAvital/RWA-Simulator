@@ -222,6 +222,8 @@ export default function RwaReturnSimulator() {
     setConstructionSalesScenario,
     constructionDelayMonths,
     setConstructionDelayMonths,
+    constructionIncompleteSalesAtBuildEndPct,
+    setConstructionIncompleteSalesAtBuildEndPct,
     constructionTotalCost,
     setConstructionTotalCost,
     constructionLandCost,
@@ -795,6 +797,7 @@ export default function RwaReturnSimulator() {
         finalMonths: constructionFinalMonths,
         salesScenario: constructionSalesScenario,
         constructionDelayMonths,
+        incompleteSalesAtBuildEndPct: constructionIncompleteSalesAtBuildEndPct,
         totalCost: constructionTotalCost,
         landCost: constructionLandCost,
         expectedRevenue: constructionExpectedRevenue,
@@ -1108,6 +1111,8 @@ export default function RwaReturnSimulator() {
             setSalesScenario={setConstructionSalesScenario}
             constructionDelayMonths={constructionDelayMonths}
             setConstructionDelayMonths={setConstructionDelayMonths}
+            incompleteSalesAtBuildEndPct={constructionIncompleteSalesAtBuildEndPct}
+            setIncompleteSalesAtBuildEndPct={setConstructionIncompleteSalesAtBuildEndPct}
             totalCost={constructionTotalCost}
             setTotalCost={setConstructionTotalCost}
             landCost={constructionLandCost}
@@ -1721,6 +1726,7 @@ export default function RwaReturnSimulator() {
           products={constructionCreditProducts}
           setProducts={setConstructionCreditProducts}
           totalCost={constructionTotalCost}
+          expectedRevenue={constructionExpectedRevenue}
           landCost={constructionLandCost}
           equityPct={constructionEquityPct}
           bankSharePct={constructionBankSharePct}

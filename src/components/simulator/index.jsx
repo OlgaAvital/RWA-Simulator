@@ -2634,7 +2634,7 @@ export function ConstructionCollateralModal({ collaterals, setCollaterals, insur
   );
 }
 
-export function ConstructionCreditModal({ products, setProducts, totalCost, landCost, equityPct, bankSharePct, constructionMonths = 36, onBeforeChange, onClose }) {
+export function ConstructionCreditModal({ products, setProducts, totalCost, expectedRevenue = 0, landCost, equityPct, bankSharePct, constructionMonths = 36, onBeforeChange, onClose }) {
   const updateProduct = (id, field, value) => {
     onBeforeChange?.();
     setProducts((rows) => (rows || []).map((row) => (row.id === id ? { ...row, [field]: value } : row)));
@@ -2643,9 +2643,9 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
     onBeforeChange?.();
     const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
     setProducts((rows) => [
-      ...(rows || []),
       {
         id: Date.now(),
+        isNew: true,
         name: rule.label,
         productType,
         amount: 0,
@@ -2656,8 +2656,13 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
         riskWeight: rule.defaultRiskWeight,
         repaymentPriority: rule.isMezzanine ? 2 : 1,
         balloonAtEnd: rule.defaultBalloonAtEnd || false,
-        ...Object.fromEntries(CONSTRUCTION_UTILIZATION_FIELDS.map(({ field }, index) => [field, rule.isGuarantee ? 0 : Math.min(100, Number((((index + 1) / Math.max(1, Math.ceil(constructionMonths / 6))) * 100).toFixed(2)))])),
+        paymentTerms: rule.isSaleLaw ? "30-70" : undefined,
+        utilizationAvgPct: rule.isGuarantee ? 100 : undefined,
+        commitmentType: rule.defaultStandalone ? "standalone" : "facility",
+        stagePeriod: productType === "mezzanineLoan" || productType === "vatLoan" ? "construction" : rule.stage,
+        ...Object.fromEntries(CONSTRUCTION_UTILIZATION_FIELDS.map(({ field }) => [field, rule.hasHalfYearUtilization ? 50 : 0])),
       },
+      ...(rows || []).map((row) => ({ ...row, isNew: false })),
     ]);
   };
   const removeProduct = (id) => {
@@ -2679,10 +2684,7 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
             <p className="mt-1 text-sm text-slate-600">הזיני מסגרת הלוואות וצפי ניצול בכל חציון. החלק המנוצל מחושב ב־CCF 100%, והיתרה הלא מנוצלת מחושבת לאחר קיזוז ערבויות חוק מכר ומסגרת הפרויקט.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => addProduct("seniorConstruction")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">+ הלוואה בכירה</button>
-            <button type="button" onClick={() => addProduct("mezzanineLoan")} className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700">+ מזנין</button>
-            <button type="button" onClick={() => addProduct("saleLawGuarantee")} className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">+ ערבויות חוק מכר</button>
-            <button type="button" onClick={() => addProduct("performanceGuarantee")} className="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ ערבות ביצוע</button>
+            <button type="button" onClick={() => addProduct("seniorConstruction")} className="rounded-2xl bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700">הוסף מוצר חדש</button>
             <button type="button" onClick={resetDefault} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">ברירת מחדל</button>
           </div>
         </div>
@@ -2710,15 +2712,15 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                 const visibleUtilizationFields = CONSTRUCTION_UTILIZATION_FIELDS.slice(0, Math.max(1, Math.ceil(constructionMonths / 6)));
                 const lastUtilizationPct = visibleUtilizationFields.reduce((last, { field }) => (product[field] ?? last), 0);
                 return (
-                  <tr key={product.id} className="border-t align-top">
+                  <tr key={product.id} className={`border-t align-top ${product.isNew ? "bg-amber-50" : "bg-white"}`}>
                     <td className="p-3"><input value={product.name || ""} onChange={(event) => updateProduct(product.id, "name", event.target.value)} className="w-40 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200" /></td>
                     <td className="p-3">
                       <select value={product.productType || "seniorConstruction"} onChange={(event) => updateProduct(product.id, "productType", event.target.value)} className="w-36 rounded-xl border px-2 py-1 outline-none focus:ring-2 focus:ring-orange-200">
                         {Object.entries(CONSTRUCTION_CREDIT_PRODUCT_TYPES).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}
                       </select>
                     </td>
-                    <td className="p-3"><NumberCell value={product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} /></td>
-                    <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} /></td>
+                    <td className="p-3"><NumberCell value={rule.isSaleLaw ? expectedRevenue : product.limit ?? product.amount ?? 0} onChange={(v) => updateProduct(product.id, "limit", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw} />{rule.isSaleLaw && <div className="mt-1 text-[11px] text-slate-500">נשאב מתמורות צפויות ממכירות</div>}</td>
+                    <td className="p-3"><NumberCell value={product.amount ?? 0} onChange={(v) => updateProduct(product.id, "amount", clampNumber(v, 0, 10000000))} disabled={rule.isSaleLaw} /></td>
                     <td className="p-3"><NumberCell value={product.margin ?? 0} onChange={(v) => updateProduct(product.id, "margin", clampNumber(v, 0, 30))} /></td>
                     <td className="p-3"><NumberCell disabled={isGuarantee} value={isGuarantee ? 0 : product.customerInterest ?? product.margin ?? 0} onChange={(v) => updateProduct(product.id, "customerInterest", clampNumber(v, 0, 30))} />{!isGuarantee && <div className="mt-1 text-[11px] text-slate-500">מחיר צל: {Math.max(0, (Number(product.customerInterest ?? product.margin) || 0) - (Number(product.margin) || 0)).toFixed(2)}% · מרווח + מחיר צל = ריבית ללקוח</div>}</td>
                     {visibleUtilizationFields.map(({ field }) => (
@@ -2729,7 +2731,11 @@ export function ConstructionCreditModal({ products, setProducts, totalCost, land
                       </td>
                     ))}
                     <td className="p-3 font-bold text-slate-700">{isLand ? "100% בתקופת קרקע" : isGuarantee ? "ללא ניצול הלוואה" : `${Number(lastUtilizationPct || 0).toFixed(1)}%`}</td>
-                    <td className="p-3"><button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button></td>
+                    <td className="p-3 space-y-2">
+                      {rule.isSaleLaw && <select value={product.paymentTerms || "30-70"} onChange={(event) => updateProduct(product.id, "paymentTerms", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="20-80">20-80</option><option value="30-70">30-70</option><option value="50-50">50-50</option></select>}
+                      {(product.productType === "mezzanineLoan" || product.productType === "vatLoan") && <select value={product.stagePeriod || "construction"} onChange={(event) => updateProduct(product.id, "stagePeriod", event.target.value)} className="w-28 rounded-xl border px-2 py-1 text-xs"><option value="land">קרקע</option><option value="construction">בניה</option></select>}
+                      <button type="button" onClick={() => removeProduct(product.id)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">מחק</button>
+                    </td>
                   </tr>
                 );
               })}
@@ -2760,6 +2766,8 @@ export function ConstructionProjectPanel({
   setSalesScenario,
   constructionDelayMonths,
   setConstructionDelayMonths,
+  incompleteSalesAtBuildEndPct = 80,
+  setIncompleteSalesAtBuildEndPct,
   totalCost,
   setTotalCost,
   landCost,
@@ -2863,10 +2871,10 @@ export function ConstructionProjectPanel({
           <div className="rounded-3xl border border-slate-200 bg-white p-4">
             <h3 className="mb-4 font-semibold text-slate-800">הכנסות נוספות</h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-              <MetricInput label="עמלת אי ניצול, % מהמסגרות הלא מנוצלות" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
+              <MetricInput label="עמלת הקמה חד פעמית, %" value={setupFeePct} setValue={setSetupFeePct} min={0} max={10} step={0.05} />
               <MetricInput label="עמלת הכנת מסמכים לקרקע, ₪k" value={landDocumentFee} setValue={setLandDocumentFee} min={0} max={50000} step={10} />
               <MetricInput label="עמלת הכנת מסמכים לליווי, ₪k" value={escortDocumentFee} setValue={setEscortDocumentFee} min={0} max={50000} step={10} />
-              <MetricInput label="עמלת ליווי פרויקט שנתית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
+              <MetricInput label="עמלת ליווי פרויקט חד פעמית, ₪k" value={projectManagementFee} setValue={setProjectManagementFee} min={0} max={50000} step={10} />
               <MetricInput label="עמלת הנפקת עח״מ חד פעמית, ₪k" value={workingCapitalIssuanceFee} setValue={setWorkingCapitalIssuanceFee} min={0} max={50000} step={10} />
               <MetricInput label="משפטי/מפקח/בקרה שנתי, ₪k" value={legalAndControlFees} setValue={setLegalAndControlFees} min={0} max={50000} step={10} />
             </div>
@@ -2876,7 +2884,8 @@ export function ConstructionProjectPanel({
             <h3 className="mb-4 font-semibold text-emerald-900">תוצאות ניהוליות</h3>
             <div className="space-y-1 rounded-2xl bg-white/70 px-3 py-2">
               <Kpi title="LTV בתקופת הקרקע" value={`${forecast.landPeriodLtv.toFixed(1)}%`} />
-              <Kpi title="LTV פרויקט" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
+              <Kpi title="LTV פרויקט ללא מזנין" value={`${forecast.ltvBeforeMezzanine.toFixed(1)}%`} />
+              <Kpi title="LTV פרויקט כולל מזנין" value={`${forecast.ltvAfterMezzanine.toFixed(1)}%`} />
               <Kpi title="RWA ממוצע" value={formatK(forecast.averageRwa)} />
               <Kpi title="תשואה ל־RWA שנה ראשונה" value={`${forecast.firstYearReturnOnRwa.toFixed(2)}%`} positive />
               <Kpi title="תשואה ממוצעת" value={`${forecast.averageReturnOnRwa.toFixed(2)}%`} positive />
@@ -2905,6 +2914,7 @@ export function ConstructionProjectPanel({
                 </select>
               </label>
               <MetricInput label="עיכוב בבנייה, חודשים" value={constructionDelayMonths} setValue={setConstructionDelayMonths} min={0} max={24} step={1} />
+              {salesScenario === "incompleteAtBuildEnd" && <MetricInput label="% מכירות בסוף הבניה" value={incompleteSalesAtBuildEndPct} setValue={setIncompleteSalesAtBuildEndPct} min={0} max={100} step={1} />}
             </div>
           </div>
       </Panel>

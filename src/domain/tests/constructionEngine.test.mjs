@@ -99,8 +99,8 @@ const utilizationWithSaleLawForecast = calculateConstructionProjectForecast({
 });
 const utilizationRow = utilizationWithSaleLawForecast.rows[0];
 assert.equal(utilizationRow.loanOutstanding, 800, "80% utilization on a 1,000 loan frame should create 800 utilized credit");
-assert.equal(utilizationRow.saleLawGuaranteeOutstanding, 600, "issued sale-law guarantees should be included alongside loan utilization");
-assert.equal(utilizationRow.undrawnLoan, 100, "undrawn real-estate loan frame should be residual project frame: 1,500 - 800 - 600 = 100");
+assert.equal(utilizationRow.saleLawGuaranteeOutstanding, 180, "sale-law guarantees should follow normative payment terms until occupancy");
+assert.equal(utilizationRow.undrawnLoan, 200, "undrawn construction loan frame should reflect the unused part of the configured facility");
 
 const infrastructureSmokeForecast = calculateInfrastructureProjectForecast({
   projectYears: 25,
