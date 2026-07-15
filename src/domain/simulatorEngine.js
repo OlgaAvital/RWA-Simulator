@@ -1743,10 +1743,10 @@ function getSaleLawGuaranteeEffectiveCcf(baseCcf, finalCcf, reductionStartPct, s
   return base - Math.max(0, base - floor) * progress;
 }
 
-export function createDefaultConstructionCreditProducts({ totalCost = 0, landCost = 0, equityPct = 25, bankSharePct = 100 } = {}) {
+export function createDefaultConstructionCreditProducts({ totalCost = 0, landCost = 0, expectedRevenue = 0, equityPct = 25, bankSharePct = 100 } = {}) {
   const equityAmount = Math.max(0, Number(totalCost) || 0) * (clampNumber(equityPct, 0, 100) / 100);
   const defaultFacility = Math.max(0, (Number(totalCost) || 0) - equityAmount) * (clampNumber(bankSharePct, 0, 100) / 100);
-  const landFacility = Math.min(defaultFacility, Math.max(0, (Number(landCost) || 0) - Math.min(equityAmount, Number(landCost) || 0)) * (clampNumber(bankSharePct, 0, 100) / 100));
+  const landFacility = Math.min(defaultFacility, Math.max(0, Number(landCost) || 0) * (1 - clampNumber(equityPct, 0, 100) / 100) * (clampNumber(bankSharePct, 0, 100) / 100));
   const constructionFacility = Math.max(0, defaultFacility - landFacility);
 
   return [
@@ -1779,8 +1779,8 @@ export function createDefaultConstructionCreditProducts({ totalCost = 0, landCos
       id: 3,
       name: "מסגרת ערבויות חוק מכר",
       productType: "saleLawGuarantee",
-      amount: 0,
-      limit: 0,
+      amount: Math.max(0, Number(expectedRevenue) || 0) * (clampNumber(bankSharePct, 0, 100) / 100),
+      limit: Math.max(0, Number(expectedRevenue) || 0) * (clampNumber(bankSharePct, 0, 100) / 100),
       margin: 0.65,
       customerInterest: 0,
       ccfUndrawn: 30,
@@ -1838,8 +1838,9 @@ export function calculateConstructionProjectForecast(input = {}) {
   const undrawnLoanCcf = Math.max(0, Number(input.undrawnLoanCcf) || 0) / 100;
   const completionGuaranteeLimit = Math.max(0, Number(input.completionGuaranteeLimit) || 0);
   const equityAmount = totalCost * (equityPct / 100);
-  const fallbackProducts = createDefaultConstructionCreditProducts({ totalCost, landCost, equityPct, bankSharePct });
-  const creditProducts = (input.creditProducts && input.creditProducts.length > 0 ? input.creditProducts : fallbackProducts).map((product, index) => {
+  const hasExplicitCreditProducts = Array.isArray(input.creditProducts);
+  const fallbackProducts = createDefaultConstructionCreditProducts({ totalCost, landCost, expectedRevenue, equityPct, bankSharePct });
+  const creditProducts = (hasExplicitCreditProducts ? input.creditProducts : fallbackProducts).map((product, index) => {
     const rule = CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType] || CONSTRUCTION_CREDIT_PRODUCT_TYPES.seniorConstruction;
     return {
       ...product,
@@ -1863,7 +1864,8 @@ export function calculateConstructionProjectForecast(input = {}) {
   const vatLoanFacility = creditProducts.filter((product) => product.productType === "vatLoan").reduce((sum, product) => sum + product.amount, 0);
   const constructionLoanFacility = Math.max(0, totalLoanFacility - landLoanFacility - mezzanineFacility);
   const seniorLoanFacility = Math.max(0, totalLoanFacility - mezzanineFacility);
-  const saleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0) || expectedRevenue * (bankSharePct / 100);
+  const explicitSaleLawGuaranteeFacility = creditProducts.filter((product) => CONSTRUCTION_CREDIT_PRODUCT_TYPES[product.productType]?.isSaleLaw).reduce((sum, product) => sum + Math.max(product.limit || 0, product.amount || 0), 0);
+  const saleLawGuaranteeFacility = explicitSaleLawGuaranteeFacility || (hasExplicitCreditProducts ? 0 : expectedRevenue * (bankSharePct / 100));
   const setupFee = landDocumentFee + escortDocumentFee + workingCapitalIssuanceFee;
   const monthlyAccountFee = 0;
   const monthlyControlFee = legalAndControlFees / 12;

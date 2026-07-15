@@ -12,22 +12,22 @@ export function useConstructionProjectState() {
   const [constructionSalesScenario, setConstructionSalesScenario] = useState("linear");
   const [constructionDelayMonths, setConstructionDelayMonths] = useState(0);
   const [constructionIncompleteSalesAtBuildEndPct, setConstructionIncompleteSalesAtBuildEndPct] = useState(80);
-  const [constructionTotalCost, setConstructionTotalCost] = useState(420000);
-  const [constructionLandCost, setConstructionLandCost] = useState(140000);
-  const [constructionExpectedRevenue, setConstructionExpectedRevenue] = useState(560000);
+  const [constructionTotalCost, setConstructionTotalCost] = useState(0);
+  const [constructionLandCost, setConstructionLandCost] = useState(0);
+  const [constructionExpectedRevenue, setConstructionExpectedRevenue] = useState(0);
   const [constructionEquityPct, setConstructionEquityPct] = useState(25);
   const [constructionBankSharePct, setConstructionBankSharePct] = useState(100);
   const [constructionLoanMargin, setConstructionLoanMargin] = useState(3.2);
   const [constructionGuaranteeFeeRate, setConstructionGuaranteeFeeRate] = useState(1.1);
   const [constructionSaleLawGuaranteeFeeRate, setConstructionSaleLawGuaranteeFeeRate] = useState(0.65);
-  const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(180);
+  const [constructionAccountManagementFee, setConstructionAccountManagementFee] = useState(0);
   const [constructionSetupFeePct, setConstructionSetupFeePct] = useState(0.45);
   const [constructionProjectManagementFee, setConstructionProjectManagementFee] = useState(0);
   const [constructionLandDocumentFee, setConstructionLandDocumentFee] = useState(0);
   const [constructionEscortDocumentFee, setConstructionEscortDocumentFee] = useState(0);
   const [constructionWorkingCapitalIssuanceFee, setConstructionWorkingCapitalIssuanceFee] = useState(0);
-  const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(240);
-  const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(25000);
+  const [constructionLegalAndControlFees, setConstructionLegalAndControlFees] = useState(0);
+  const [constructionCompletionGuaranteeLimit, setConstructionCompletionGuaranteeLimit] = useState(0);
   const [constructionLandRiskWeight, setConstructionLandRiskWeight] = useState(100);
   const [constructionBuildRiskWeight, setConstructionBuildRiskWeight] = useState(100);
   const [constructionSaleLawGuaranteeCcf, setConstructionSaleLawGuaranteeCcf] = useState(30);
@@ -39,65 +39,13 @@ export function useConstructionProjectState() {
 
   const [isConstructionCollateralModalOpen, setIsConstructionCollateralModalOpen] = useState(false);
   const [constructionCollaterals, setConstructionCollaterals] = useState([
-    { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 140000, haircutPct: 35, eligible: true },
-    { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 50000, haircutPct: 100, eligible: false },
+    { id: 1, name: "שעבוד קרקע מדרגה ראשונה", collateralType: "landMortgage", amount: 0, haircutPct: 35, eligible: true },
+    { id: 2, name: "ערבות אישית בעלי מניות", collateralType: "personalGuarantee", amount: 0, haircutPct: 100, eligible: false },
   ]);
   const [constructionInsurances, setConstructionInsurances] = useState([
     { id: 1, name: "ביטוח ערבויות חוק מכר", insuranceType: "guaranteeInsurance", insuredAmount: 0, insurerRating: "a", paymentMode: "pct", paymentPct: 0.35, paymentAmount: 0 },
   ]);
-  const [constructionCreditProducts, setConstructionCreditProducts] = useState([
-    {
-      id: 1,
-      name: "הלוואת קרקע",
-      productType: "landLoan",
-      amount: 105000,
-      limit: 105000,
-      margin: 3.2,
-      customerInterest: 3.2,
-      ccfUndrawn: 0,
-      riskWeight: 100,
-      repaymentPriority: 1,
-    },
-    {
-      id: 2,
-      name: "הלוואת בניה בכירה",
-      productType: "seniorConstruction",
-      amount: 210000,
-      limit: 210000,
-      margin: 3.2,
-      customerInterest: 3.2,
-      ccfUndrawn: 0,
-      riskWeight: 100,
-      repaymentPriority: 1,
-      ...defaultConstructionUtilization,
-    },
-    {
-      id: 3,
-      name: "מסגרת ערבויות חוק מכר",
-      productType: "saleLawGuarantee",
-      amount: 560000,
-      limit: 560000,
-      margin: 0.65,
-      customerInterest: 0,
-      ccfUndrawn: 30,
-      riskWeight: 30,
-      paymentTerms: "30-70",
-    },
-    {
-      id: 4,
-      name: "הלוואת מזנין",
-      productType: "mezzanineLoan",
-      amount: 0,
-      limit: 0,
-      margin: 7.5,
-      customerInterest: 7.5,
-      ccfUndrawn: 0,
-      riskWeight: 100,
-      balloonAtEnd: true,
-      repaymentPriority: 2,
-      ...zeroConstructionUtilization,
-    },
-  ]);
+  const [constructionCreditProducts, setConstructionCreditProducts] = useState([]);
 
   return {
     constructionLandMonths,
